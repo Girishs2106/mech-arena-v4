@@ -238,11 +238,13 @@
     aptFilter: { search: '', topic: 'all', difficulty: 'all', page: 1 },
     guideFilter: { search: '', source: 'all', page: 1 },
     formulaSearch: '',
-    // Active Mock Exam state
+    // Active Mock Exam state (Version 5 Proctored + Job Process)
     mockExam: {
       active: false,
       finished: false,
-      title: 'Mechanical Engineering & Placement Mock Exam',
+      jobProcessMode: false,
+      proctoringEnabled: true,
+      title: 'Mechanical Engineering & Placement Mock Exam (v5 Proctored)',
       questions: [],
       answers: {},
       reviewFlags: {},
@@ -252,7 +254,24 @@
       shortMarks: 2,
       problemMarks: 4,
       negativeMarking: true,
+      warnings: 0,
+      maxWarnings: 5,
+      warningLog: [],
+      lastWarningReason: '',
       lastResult: null
+    },
+    // Shared Webcam Face & Motion Proctoring State (v5)
+    proctorState: {
+      cameraActive: false,
+      faceDetected: true,
+      motionPct: 2,
+      statusText: '✓ Face Centered · Low Motion',
+      missingFrames: 0,
+      highMotionFrames: 0,
+      warningCount: 0,
+      maxWarnings: 5,
+      lastAlert: '',
+      events: []
     },
     // Flashcard deck state
     flashcardState: {
@@ -261,15 +280,31 @@
       subjectFilter: 'all',
       masteredIds: safeGetStorage('mechprep_v4_fc_mastered', [])
     },
-    // AI Interview Taker & Job Portal state (Full-Screen Combined Voice + Text)
+    // AI Interview Taker & Job Portal state (Version 5: Selectable Audio, Human Face Motion, Self-Generating Mock Interview & Proctoring)
     interviewState: {
       activeFullscreen: false,
+      sessionFinished: false,
+      jobProcessStage: 2,
       autoSpeak: true,
+      autoListenAfterSpeak: false,
+      proctoringEnabled: true,
+      selectedVoiceURI: 'auto-in',
+      voicePersona: 'male-panel',
+      speechRate: 1.0,
+      speechPitch: 1.0,
       isListening: false,
       isSpeaking: false,
-      track: 'Mechanical Design / CAD / GD&T (Creo / NX)',
+      mouthPhase: 0,
+      blinkState: false,
+      headTilt: 0,
+      track: 'Self-Generated Mixed Core + Aptitude (Like Mock Test)',
       company: 'SJCE Placement Drive (All Core & Tech Recruiters)',
       difficulty: 'Intermediate (GET & 8th-Sem Internship)',
+      sessionQuestionCount: 5,
+      generatedQuestions: [],
+      sessionScores: {},
+      sessionAnswers: {},
+      qTimerSec: 180,
       qIndex: 0,
       answerText: '',
       evaluated: false,
@@ -4543,12 +4578,332 @@ function formatReadableSyllabus(rawText) {
     });
   }
 
-  // --- MODULE 14: TIMED MOCK TESTS (ZERO-SPOILER EXAM ENGINE + SCHEMATIC REVIEW) ---
+  // ==========================================================================
+  // VERSION 5 PROCTORING ENGINE: WEBCAM FACE DETECTOR, MOTION DETECTOR &
+  // FULLSCREEN / TAB-SWITCH EXIT WARNING SYSTEM (SHARED BY MOCK TEST & INTERVIEW)
+  // ==========================================================================
+  let proctorMediaStream = null;
+  let proctorIntervalId = null;
+  let proctorPrevFrameData = null;
+  let proctorOffscreenCanvas = null;
+  let proctorNativeFaceDetector = null;
+  let proctorListenersBound = false;
+
+  function playProctorWarningBeep() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(620, ctx.currentTime);
+      osc.frequency.setValueAtTime(440, ctx.currentTime + 0.14);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.32);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.33);
+    } catch {}
+  }
+
+  function isProctoredSessionActive() {
+    return Boolean(
+      (state.mockExam.active && !state.mockExam.finished && state.mockExam.proctoringEnabled) ||
+      (state.interviewState.activeFullscreen && !state.interviewState.sessionFinished && state.interviewState.proctoringEnabled)
+    );
+  }
+
+  function triggerProctorViolation(reasonText) {
+    if (!isProctoredSessionActive()) return;
+    const nowTime = new Date().toLocaleTimeString();
+    const ps = state.proctorState;
+
+    // Debounce identical warnings within 2.5 seconds
+    if (ps._lastWarnTs && Date.now() - ps._lastWarnTs < 2500) return;
+    ps._lastWarnTs = Date.now();
+
+    ps.warningCount += 1;
+    ps.lastAlert = `${reasonText} (${nowTime})`;
+    ps.events.unshift({ time: nowTime, reason: reasonText, strike: ps.warningCount });
+
+    if (state.mockExam.active && !state.mockExam.finished) {
+      state.mockExam.warnings = ps.warningCount;
+      state.mockExam.lastWarningReason = ps.lastAlert;
+      state.mockExam.warningLog.unshift(ps.lastAlert);
+    }
+
+    playProctorWarningBeep();
+    showToast(`⚠️ PROCTORING WARNING (${ps.warningCount}/${ps.maxWarnings}): ${reasonText}`, 'warn');
+
+    // Update live warning UI banner immediately if present
+    const banner = document.getElementById('proctor-warning-banner');
+    const bannerMsg = document.getElementById('proctor-warning-msg');
+    const strikeBadge = document.getElementById('proctor-strike-badge');
+    if (banner) banner.classList.remove('hidden');
+    if (bannerMsg) bannerMsg.textContent = `Strike ${ps.warningCount}/${ps.maxWarnings}: ${reasonText}. Stay in Full-Screen and keep your face centered in the camera frame.`;
+    if (strikeBadge) {
+      strikeBadge.textContent = `⚠️ Warnings: ${ps.warningCount} / ${ps.maxWarnings}`;
+      strikeBadge.className = 'px-3 py-1.5 rounded-xl bg-rose-600 text-white font-extrabold text-xs animate-pulse shadow';
+    }
+  }
+
+  function ensureProctorGlobalListeners() {
+    if (proctorListenersBound || typeof window === 'undefined') return;
+    proctorListenersBound = true;
+
+    document.addEventListener('fullscreenchange', () => {
+      if (isProctoredSessionActive() && !document.fullscreenElement) {
+        triggerProctorViolation('Exited Full-Screen Assessment Mode');
+      }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (isProctoredSessionActive() && document.hidden) {
+        triggerProctorViolation('Switched Browser Tab or Minimized Window');
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      if (isProctoredSessionActive()) {
+        triggerProctorViolation('Window Focus Lost (External Application Clicked)');
+      }
+    });
+  }
+
+  async function startProctorCameraAndDetector() {
+    ensureProctorGlobalListeners();
+    const ps = state.proctorState;
+
+    if (typeof window !== 'undefined' && 'FaceDetector' in window && !proctorNativeFaceDetector) {
+      try {
+        proctorNativeFaceDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
+      } catch {}
+    }
+
+    if (!proctorMediaStream && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        proctorMediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 320, height: 240, facingMode: 'user' },
+          audio: false
+        });
+        ps.cameraActive = true;
+      } catch {
+        ps.cameraActive = false;
+        ps.statusText = '📷 Camera Permission Pending (Tab & Exit Guard Active)';
+      }
+    }
+
+    const bindVideoEl = () => {
+      const vid = document.getElementById('proctor-webcam-video');
+      if (vid && proctorMediaStream && vid.srcObject !== proctorMediaStream) {
+        vid.srcObject = proctorMediaStream;
+        vid.play().catch(() => {});
+      }
+    };
+    bindVideoEl();
+    setTimeout(bindVideoEl, 150);
+
+    if (proctorIntervalId) clearInterval(proctorIntervalId);
+    proctorIntervalId = setInterval(async () => {
+      if (!isProctoredSessionActive()) return;
+      const vid = document.getElementById('proctor-webcam-video');
+      const statusEl = document.getElementById('proctor-live-status');
+      const motionBarEl = document.getElementById('proctor-motion-bar');
+      const reticleEl = document.getElementById('proctor-face-reticle');
+
+      if (!vid || !ps.cameraActive || vid.readyState < 2) {
+        if (statusEl) statusEl.textContent = ps.cameraActive ? '📷 Initializing Face & Motion Sensor...' : '🛡️ Exit & Tab Guard Active (Allow Camera for Face/Motion)';
+        return;
+      }
+
+      if (!proctorOffscreenCanvas) {
+        proctorOffscreenCanvas = document.createElement('canvas');
+        proctorOffscreenCanvas.width = 64;
+        proctorOffscreenCanvas.height = 48;
+      }
+      const ctx = proctorOffscreenCanvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(vid, 0, 0, 64, 48);
+      const frame = ctx.getImageData(0, 0, 64, 48).data;
+
+      // 1. Compute Frame-to-Frame Motion Percentage & Center Face Region Presence
+      let diffSum = 0;
+      let centerLumaSum = 0;
+      let centerSkinPixels = 0;
+      let centerCount = 0;
+
+      for (let y = 0; y < 48; y++) {
+        for (let x = 0; x < 64; x++) {
+          const idx = (y * 64 + x) * 4;
+          const r = frame[idx], g = frame[idx + 1], b = frame[idx + 2];
+          const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+
+          if (proctorPrevFrameData) {
+            const pr = proctorPrevFrameData[idx], pg = proctorPrevFrameData[idx + 1], pb = proctorPrevFrameData[idx + 2];
+            diffSum += (Math.abs(r - pr) + Math.abs(g - pg) + Math.abs(b - pb)) / 3;
+          }
+
+          // Center face bounding zone (x: 16..48, y: 8..40)
+          if (x >= 16 && x <= 48 && y >= 8 && y <= 40) {
+            centerCount++;
+            centerLumaSum += luma;
+            if (r > 60 && g > 40 && b > 25 && r > b && Math.abs(r - g) < 90) {
+              centerSkinPixels++;
+            }
+          }
+        }
+      }
+      proctorPrevFrameData = new Uint8ClampedArray(frame);
+
+      const motionPct = Math.min(100, Math.round((diffSum / (64 * 48 * 42)) * 100));
+      const avgCenterLuma = centerLumaSum / Math.max(1, centerCount);
+      let facePresent = avgCenterLuma > 22 && avgCenterLuma < 248 && centerSkinPixels > 45;
+
+      // Also check native FaceDetector if available
+      if (proctorNativeFaceDetector) {
+        try {
+          const faces = await proctorNativeFaceDetector.detect(vid);
+          if (faces && faces.length > 0) {
+            facePresent = true;
+            if (faces.length > 1) {
+              triggerProctorViolation('Multiple Faces Detected in Camera Frame');
+            }
+          }
+        } catch {}
+      }
+
+      ps.motionPct = motionPct;
+      ps.faceDetected = facePresent;
+
+      if (!facePresent) {
+        ps.missingFrames += 1;
+        if (ps.missingFrames >= 4) {
+          ps.missingFrames = 0;
+          triggerProctorViolation('Face Not Detected / Looking Away from Screen');
+        }
+      } else {
+        ps.missingFrames = 0;
+      }
+
+      if (motionPct > 34) {
+        ps.highMotionFrames += 1;
+        if (ps.highMotionFrames >= 2) {
+          ps.highMotionFrames = 0;
+          triggerProctorViolation(`Excessive Head/Body Motion Detected (${motionPct}% delta)`);
+        }
+      } else {
+        ps.highMotionFrames = 0;
+      }
+
+      if (statusEl) {
+        if (!facePresent) {
+          statusEl.textContent = `⚠️ Face Off-Center · Motion ${motionPct}%`;
+          statusEl.className = 'text-[11px] font-extrabold text-amber-300';
+        } else if (motionPct > 26) {
+          statusEl.textContent = `⚠️ High Motion (${motionPct}%) · Hold Steady`;
+          statusEl.className = 'text-[11px] font-extrabold text-rose-300';
+        } else {
+          statusEl.textContent = `✓ Face Verified · Motion ${motionPct}%`;
+          statusEl.className = 'text-[11px] font-extrabold text-emerald-300';
+        }
+      }
+      if (motionBarEl) {
+        motionBarEl.style.width = `${Math.min(100, Math.max(6, motionPct))}%`;
+        motionBarEl.className = `h-1.5 rounded-full transition-all ${motionPct > 28 ? 'bg-rose-500' : motionPct > 16 ? 'bg-amber-400' : 'bg-emerald-400'}`;
+      }
+      if (reticleEl) {
+        reticleEl.className = `absolute inset-3 rounded-xl border-2 pointer-events-none transition-all ${!facePresent ? 'border-rose-500 animate-pulse' : motionPct > 26 ? 'border-amber-400' : 'border-emerald-400/80'}`;
+      }
+    }, 650);
+  }
+
+  function stopProctorCameraAndDetector() {
+    if (proctorIntervalId) {
+      clearInterval(proctorIntervalId);
+      proctorIntervalId = null;
+    }
+    if (proctorMediaStream) {
+      try {
+        proctorMediaStream.getTracks().forEach(t => t.stop());
+      } catch {}
+      proctorMediaStream = null;
+    }
+    state.proctorState.cameraActive = false;
+    proctorPrevFrameData = null;
+  }
+
+  function renderProctorWarningBannerHtml() {
+    const ps = state.proctorState;
+    return `
+      <div id="proctor-warning-banner" class="${ps.lastAlert ? '' : 'hidden'} rounded-2xl bg-rose-950/95 border-2 border-rose-500 text-white p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl">
+        <div class="flex items-center gap-3">
+          <span class="px-2.5 py-1 rounded-lg bg-rose-600 font-black text-xs uppercase tracking-wider animate-pulse">⚠️ Proctoring Alert</span>
+          <span id="proctor-warning-msg" class="text-xs sm:text-sm font-bold text-rose-100">
+            ${escapeHtml(ps.lastAlert || 'Please remain in Full-Screen mode and keep your face centered.')} (Warnings: ${ps.warningCount}/${ps.maxWarnings})
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" id="proctor-relock-fs-btn" class="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow">
+            🔒 Re-Lock Fullscreen &amp; Continue
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderProctorCameraWidgetHtml(compact = false) {
+    const ps = state.proctorState;
+    return `
+      <div class="bg-slate-900 text-white rounded-2xl border border-slate-700 p-3 shadow-lg ${compact ? 'w-full sm:w-64' : 'w-full'} space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-blue-300 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            AI Face &amp; Motion Proctor
+          </span>
+          <span id="proctor-strike-badge" class="px-2 py-0.5 rounded-lg ${ps.warningCount > 0 ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-800 text-slate-300'} font-extrabold text-[10px]">
+            ⚠️ ${ps.warningCount}/${ps.maxWarnings}
+          </span>
+        </div>
+        <div class="relative w-full h-28 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+          <video id="proctor-webcam-video" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
+          <div id="proctor-face-reticle" class="absolute inset-3 rounded-xl border-2 border-emerald-400/80 pointer-events-none"></div>
+          <div class="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] bg-slate-950/80 px-2 py-0.5 rounded">
+            <span id="proctor-live-status" class="font-extrabold text-emerald-300">${escapeHtml(ps.statusText)}</span>
+          </div>
+        </div>
+        <div class="space-y-1">
+          <div class="flex items-center justify-between text-[10px] text-slate-400">
+            <span>Motion Sensor Sensitivity</span>
+            <span>Exit/Tab Guard: ON</span>
+          </div>
+          <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div id="proctor-motion-bar" class="h-1.5 bg-emerald-400 rounded-full transition-all" style="width: 10%"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindProctorBannerEvents() {
+    document.getElementById('proctor-relock-fs-btn')?.addEventListener('click', () => {
+      try {
+        if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      } catch {}
+      document.getElementById('proctor-warning-banner')?.classList.add('hidden');
+    });
+  }
+
+  // --- MODULE 14: TIMED MOCK TESTS (VERSION 5: FACE & MOTION PROCTORING + EXIT WARNING + JOB PROCESS STAGE 1) ---
   function renderMockTests() {
     const m = state.mockExam;
 
     if (m.active && !m.finished) {
       syncExamFullscreenMode(true);
+      if (m.proctoringEnabled) startProctorCameraAndDetector();
+
       const q = m.questions[m.currentIndex] || m.questions[0];
       const chosen = m.answers[q.id];
       const mins = String(Math.floor(m.remainingSec / 60)).padStart(2, '0');
@@ -4556,33 +4911,43 @@ function formatReadableSyllabus(rawText) {
       const answeredCount = Object.keys(m.answers).length;
 
       container.innerHTML = `
-        <div class="max-w-5xl mx-auto space-y-5">
-          <!-- Full-Screen Active Exam Header (Zero hints/spoilers & no numbering option bar) -->
-          <div class="bg-slate-900 text-white rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4 shadow-md">
-            <div>
-              <span class="text-[11px] font-bold uppercase tracking-wider text-blue-400">Full-Screen Active Examination · Zero-Spoiler Assessment Mode</span>
-              <h1 class="text-xl font-extrabold">${escapeHtml(m.title)}</h1>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="text-xs font-semibold px-3 py-2 rounded-xl bg-slate-800 text-slate-200 border border-slate-700">
-                Answered: ${answeredCount} / ${m.questions.length}
-              </span>
-              <div id="mock-timer-readout" class="px-4 py-2 rounded-xl bg-blue-950 border border-blue-700 font-mono text-lg font-extrabold text-blue-200">
-                ⏱ ${mins}:${secs}
+        <div class="max-w-6xl mx-auto space-y-4">
+          ${renderProctorWarningBannerHtml()}
+
+          <!-- Full-Screen Active Exam Header + Live Face & Motion Detector HUD -->
+          <div class="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xl border border-blue-800/60">
+            <div class="space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-600 text-white">
+                  ${m.jobProcessMode ? '🏢 Version 5 Actual Job Process · Stage 1: Online Proctored Screening Test' : '🛡️ Version 5 Proctored Full-Screen Examination'}
+                </span>
+                <span class="text-[11px] font-bold text-emerald-300">Face + Motion + Exit Warning Active</span>
               </div>
-              <button type="button" id="toggle-fs-exam-btn" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold">
-                ⛶ Fullscreen
-              </button>
-              <button type="button" id="submit-mock-exam-btn" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold">
-                Submit Exam →
-              </button>
+              <h1 class="text-lg sm:text-xl font-extrabold">${escapeHtml(m.title)}</h1>
+              <div class="flex flex-wrap items-center gap-3 pt-1">
+                <span class="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700">
+                  Answered: ${answeredCount} / ${m.questions.length}
+                </span>
+                <div id="mock-timer-readout" class="px-4 py-1.5 rounded-xl bg-blue-950 border border-blue-700 font-mono text-base sm:text-lg font-extrabold text-blue-200">
+                  ⏱ ${mins}:${secs}
+                </div>
+                <button type="button" id="toggle-fs-exam-btn" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold">
+                  ⛶ Lock Fullscreen
+                </button>
+                <button type="button" id="submit-mock-exam-btn" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow">
+                  Submit Exam →
+                </button>
+              </div>
             </div>
+
+            <!-- Live Webcam Face & Motion Detector Widget inside Mock Test -->
+            ${renderProctorCameraWidgetHtml(true)}
           </div>
 
-          <!-- Full-Width Active Question Card (No numbered palette bar, vertical unnumbered options) -->
-          <div class="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+          <!-- Full-Width Active Question Card (Vertical unnumbered options) -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-lg space-y-5">
             <div class="flex items-center justify-between text-xs text-slate-500 border-b border-slate-100 pb-3">
-              <span class="font-bold text-slate-900 text-sm">Question ${m.currentIndex + 1} of ${m.questions.length}</span>
+              <span class="font-bold text-slate-900 text-sm">Question ${m.currentIndex + 1} of ${m.questions.length} · <span class="text-blue-700">${escapeHtml(q.topic)}</span></span>
               <span class="font-semibold text-slate-600">${escapeHtml(q.difficulty || 'Standard')} · ${m.negativeMarking ? '+4 / −1 Marks' : '+4 Marks'}</span>
             </div>
 
@@ -4624,6 +4989,7 @@ function formatReadableSyllabus(rawText) {
         </div>
       `;
 
+      bindProctorBannerEvents();
       container.querySelectorAll('[data-mock-opt]').forEach(b => {
         b.addEventListener('click', () => {
           m.answers[q.id] = Number(b.dataset.mockOpt);
@@ -4634,8 +5000,6 @@ function formatReadableSyllabus(rawText) {
         try {
           if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
             document.documentElement.requestFullscreen().catch(() => {});
-          } else if (document.fullscreenElement && document.exitFullscreen) {
-            document.exitFullscreen().catch(() => {});
           }
         } catch {}
       });
@@ -4661,22 +5025,30 @@ function formatReadableSyllabus(rawText) {
       return;
     }
 
-    // Ensure full-screen layout is restored to normal when exam is finished or in setup view
+    // Restore normal layout when exam is not active
+    stopProctorCameraAndDetector();
     syncExamFullscreenMode(false);
 
     if (m.finished && m.lastResult) {
       const r = m.lastResult;
       container.innerHTML = `
         <div class="space-y-6">
-          <div class="bg-slate-900 text-white rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <span class="text-xs font-bold uppercase text-emerald-400">Examination Complete · Detailed Engineering Review</span>
-              <h1 class="text-2xl font-extrabold mt-1">Score: ${r.pct}% (${r.earnedMarks} / ${r.maxMarks} Marks)</h1>
-              <p class="text-xs text-slate-300 mt-1">Correct: ${r.correct} · Wrong: ${r.wrong} · Unanswered: ${r.unanswered}</p>
+          <div class="bg-slate-900 text-white rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xl">
+            <div class="space-y-1">
+              <span class="text-xs font-bold uppercase text-emerald-400">Version 5 Proctored Assessment Complete · Detailed Review</span>
+              <h1 class="text-2xl font-extrabold">Score: ${r.pct}% (${r.earnedMarks} / ${r.maxMarks} Marks)</h1>
+              <p class="text-xs text-slate-300">
+                Correct: <b>${r.correct}</b> · Wrong: <b>${r.wrong}</b> · Unanswered: <b>${r.unanswered}</b> · Proctoring Warnings Logged: <b>${state.proctorState.warningCount}</b>
+              </p>
             </div>
-            <button type="button" id="new-mock-btn" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold">
-              ↻ Configure New Mock Exam
-            </button>
+            <div class="flex flex-wrap gap-2.5">
+              <button type="button" id="proceed-stage2-interview-btn" class="px-5 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs sm:text-sm font-extrabold shadow-lg">
+                🎙️ Proceed to Stage 2: Human-Motion AI Technical Interview →
+              </button>
+              <button type="button" id="new-mock-btn" class="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold">
+                ↻ New Mock Exam
+              </button>
+            </div>
           </div>
 
           <div class="space-y-4">
@@ -4726,41 +5098,48 @@ function formatReadableSyllabus(rawText) {
         m.finished = false;
         renderMockTests();
       });
+      document.getElementById('proceed-stage2-interview-btn')?.addEventListener('click', () => {
+        switchModule('placement');
+        generateSelfGeneratingInterviewSet(5);
+        enterInterviewFullscreen(false);
+      });
       return;
     }
 
-    // Setup View
+    // Setup View (Version 5 Proctored Exam + Complete Job Process Launcher)
     container.innerHTML = `
       <div class="space-y-6">
-        <div>
-          <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 14 · Timed University, GATE &amp; Placement Examinations</span>
-          <h1 class="text-2xl font-extrabold text-slate-900">Configure Timed Mock Examination</h1>
-          <p class="text-xs text-slate-600 mt-1">Launches in full-screen zero-spoiler assessment mode. Post-exam review unlocks question-specific SVG schematics and step-by-step derivations.</p>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 14 · Version 5 AI-Proctored Timed Mock Examinations &amp; Job Process Stage 1</span>
+            <h1 class="text-2xl font-extrabold text-slate-900">Configure Proctored Mock Examination (Face + Motion + Exit Guard)</h1>
+            <p class="text-xs text-slate-600 mt-1">Simulates real company online assessments (Mettl / AON / AMCAT / TCS iON) with live Webcam Face Detection, Motion Monitoring, and Fullscreen/Tab-Exit Warnings.</p>
+          </div>
         </div>
 
-        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm max-w-3xl space-y-4">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl border-2 border-blue-600 p-6 shadow-md max-w-4xl space-y-5">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label class="block text-xs font-bold uppercase text-slate-500 mb-1" for="mock-focus">Examination Track</label>
-              <select id="mock-focus" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs bg-white">
-                <option value="mixed">Combined Mechanical Technical + Placement Aptitude (80/20)</option>
-                <option value="technical">Core Mechanical Engineering Only (GATE / SEE)</option>
-                <option value="aptitude">Placement Aptitude Only (Bizotic / AM2 / AON / TCS)</option>
+              <label class="block text-xs font-bold uppercase text-slate-500 mb-1" for="mock-focus">Assessment Track</label>
+              <select id="mock-focus" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                <option value="mixed">Actual Job Process Stage 1: Aptitude + Core Mechanical (80/20)</option>
+                <option value="technical">Core Mechanical Engineering Only (GATE / OEM Technical)</option>
+                <option value="aptitude">Placement Aptitude Only (Bizotic / AM2 / AON / TCS NQT)</option>
               </select>
             </div>
             <div>
               <label class="block text-xs font-bold uppercase text-slate-500 mb-1" for="mock-q-count">Number of Questions</label>
-              <select id="mock-q-count" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs bg-white">
-                <option value="10" selected>10 Questions (15 Mins Quick Benchmark)</option>
+              <select id="mock-q-count" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                <option value="10" selected>10 Questions (15 Mins Screening)</option>
                 <option value="20">20 Questions (30 Mins Sectional Test)</option>
-                <option value="30">30 Questions (45 Mins Assessment)</option>
-                <option value="50">50 Questions (60 Mins Placement Mock)</option>
+                <option value="30">30 Questions (45 Mins Company Assessment)</option>
+                <option value="50">50 Questions (60 Mins Placement Paper)</option>
                 <option value="100">100 Questions (90 Mins Full Comprehensive Exam)</option>
               </select>
             </div>
             <div>
               <label class="block text-xs font-bold uppercase text-slate-500 mb-1" for="mock-mins">Time Limit (Minutes)</label>
-              <select id="mock-mins" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs bg-white">
+              <select id="mock-mins" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
                 <option value="10">10 Minutes</option>
                 <option value="20" selected>20 Minutes</option>
                 <option value="30">30 Minutes</option>
@@ -4768,26 +5147,37 @@ function formatReadableSyllabus(rawText) {
                 <option value="90">90 Minutes</option>
               </select>
             </div>
-            <div class="flex items-center pt-5">
-              <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                <input id="mock-neg-toggle" type="checkbox" checked class="rounded">
-                <span>Enable Negative Marking (+4 Correct, −1 Wrong)</span>
-              </label>
-            </div>
           </div>
 
-          <button type="button" id="launch-mock-btn" class="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow">
-            ⛶ Start Full-Screen Timed Mock Examination →
-          </button>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <label class="inline-flex items-center gap-2.5 text-xs font-bold text-slate-800 cursor-pointer">
+              <input id="mock-neg-toggle" type="checkbox" checked class="rounded text-blue-600">
+              <span>Enable Negative Marking (+4 Correct, −1 Wrong)</span>
+            </label>
+            <label class="inline-flex items-center gap-2.5 text-xs font-bold text-blue-900 cursor-pointer">
+              <input id="mock-proctor-toggle" type="checkbox" checked class="rounded text-blue-600">
+              <span>📷 Enable Webcam Face Detector, Motion Sensor &amp; Exit Warning</span>
+            </label>
+          </div>
+
+          <div class="flex flex-wrap gap-3">
+            <button type="button" id="launch-mock-btn" class="flex-1 py-3.5 px-5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm shadow-lg transition">
+              ⛶ Start Full-Screen Proctored Mock Exam →
+            </button>
+            <button type="button" id="launch-full-job-process-btn" class="py-3.5 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 font-extrabold text-xs sm:text-sm shadow transition">
+              🏢 Start Full 2-Stage Job Process (Round 1 Exam → Round 2 AI Interview)
+            </button>
+          </div>
         </div>
       </div>
     `;
 
-    document.getElementById('launch-mock-btn')?.addEventListener('click', () => {
+    const startExamNow = (isJobPipeline = false) => {
       const focus = document.getElementById('mock-focus')?.value || 'mixed';
       const count = Number(document.getElementById('mock-q-count')?.value || 10);
       const mins = Number(document.getElementById('mock-mins')?.value || 20);
       const neg = Boolean(document.getElementById('mock-neg-toggle')?.checked);
+      const proc = Boolean(document.getElementById('mock-proctor-toggle')?.checked);
 
       const mcqPool = state.questions.filter(q => Array.isArray(q.options) && q.options.length >= 2 && q.answer !== undefined);
       const filteredPool = mcqPool.filter(q => {
@@ -4802,14 +5192,20 @@ function formatReadableSyllabus(rawText) {
 
       m.active = true;
       m.finished = false;
+      m.jobProcessMode = isJobPipeline;
+      m.proctoringEnabled = proc;
       m.questions = shuffled;
       m.answers = {};
       m.reviewFlags = {};
       m.currentIndex = 0;
       m.remainingSec = mins * 60;
       m.negativeMarking = neg;
+      m.warnings = 0;
+      m.warningLog = [];
+      state.proctorState.warningCount = 0;
+      state.proctorState.lastAlert = '';
+      state.proctorState.events = [];
 
-      // Trigger browser native Fullscreen + full-viewport exam layout
       try {
         if (document.documentElement?.requestFullscreen) {
           document.documentElement.requestFullscreen().catch(() => {});
@@ -4828,7 +5224,10 @@ function formatReadableSyllabus(rawText) {
         if (m.remainingSec <= 0) finishMockExam();
       }, 1000);
       renderMockTests();
-    });
+    };
+
+    document.getElementById('launch-mock-btn')?.addEventListener('click', () => startExamNow(false));
+    document.getElementById('launch-full-job-process-btn')?.addEventListener('click', () => startExamNow(true));
   }
 
   function finishMockExam() {
@@ -4837,6 +5236,7 @@ function formatReadableSyllabus(rawText) {
       clearInterval(m.timerId);
       m.timerId = null;
     }
+    stopProctorCameraAndDetector();
     try {
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
@@ -4873,11 +5273,7 @@ function formatReadableSyllabus(rawText) {
     renderMockTests();
   }
 
-  // --- MODULE 15: PLACEMENT PREPARATION ---
-  // --------------------------------------------------------------------------
-  // PLACEMENT PORTALS & FULL-SCREEN COMBINED VOICE + TEXT AI INTERVIEW TAKER
-  // (1. SJCE College First -> 2. NATS, Prosple & General Portals -> 3. Prep Apps -> 4. Core OEMs)
-  // --------------------------------------------------------------------------
+  // --- MODULE 15: PLACEMENT PREPARATION & VERSION 5 HUMAN-MOTION AI INTERVIEW ---
   const OFFICIAL_JOB_PORTALS = [
     // =========================================================================
     // 1. FIRST: OFFICIAL COLLEGE PLACEMENT PORTAL (SJCE MYSURU)
@@ -5494,14 +5890,266 @@ function formatReadableSyllabus(rawText) {
     ]
   };
 
-  // --- COMBINED VOICE + TEXT AI INTERVIEW ENGINE (TTS + STT + UNIFIED EVALUATION) ---
+  // ==========================================================================
+  // VERSION 5 HUMAN-MOTION AI INTERVIEWER: SELECTABLE AUDIO VOICES, LIP-SYNC
+  // & BLINK FACE ANIMATION, SELF-GENERATING MOCK INTERVIEW SET & PROCTORING
+  // ==========================================================================
   let activeSpeechRecognition = null;
+  let availableBrowserVoices = [];
+  let avatarAnimIntervalId = null;
+  let interviewQuestionTimerId = null;
 
-  function speakInterviewText(textToRead) {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  function refreshBrowserVoices() {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+    try {
+      const list = window.speechSynthesis.getVoices() || [];
+      if (list.length) availableBrowserVoices = list;
+    } catch {}
+    return availableBrowserVoices;
+  }
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    refreshBrowserVoices();
+    try {
+      window.speechSynthesis.onvoiceschanged = () => refreshBrowserVoices();
+    } catch {}
+  }
+
+  // Dynamically self-generate a fresh multi-question interview set (like Mock Test)
+  // combining curated viva questions AND dynamically converted questions from the 1,284+ question bank!
+  function generateSelfGeneratingInterviewSet(count = 5) {
+    const iv = state.interviewState;
+    const track = iv.track;
+    const curatedPool = [];
+    Object.entries(AI_INTERVIEW_QUESTION_BANK).forEach(([tName, arr]) => {
+      if (track === 'Self-Generated Mixed Core + Aptitude (Like Mock Test)' || tName === track) {
+        arr.forEach(item => curatedPool.push(Object.assign({}, item, { sourceTrack: tName })));
+      }
+    });
+
+    // Also convert random technical & aptitude questions from state.questions into live Viva Interview prompts
+    const dynamicCandidates = state.questions.filter(q => q && q.text && q.text.length > 25 && q.explain);
+    const shuffledDyn = dynamicCandidates.slice().sort(() => Math.random() - 0.5).slice(0, Math.max(8, count * 2));
+
+    const synthesizedViva = shuffledDyn.map(q => {
+      const cleanPrompt = String(q.text).replace(/<[^>]+>/g, '').trim();
+      const cleanExplain = String(q.explain || '').replace(/<[^>]+>/g, '').trim();
+      const officialOpt = (Array.isArray(q.options) && q.answer !== undefined && q.options[q.answer])
+        ? stripLeadingOptionPrefix(String(q.options[q.answer]).replace(/<[^>]+>/g, ''))
+        : '';
+      const words = `${cleanExplain} ${officialOpt} ${q.topic || ''}`
+        .toLowerCase()
+        .replace(/[^a-z0-9.\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 4 && !['with', 'from', 'that', 'this', 'have', 'will', 'therefore', 'given', 'where'].includes(w));
+      const uniqKw = Array.from(new Set(words)).slice(0, 8);
+
+      return {
+        q: `[Self-Generated Panel Question · ${q.topic || 'Core Mechanical'}] ${cleanPrompt} Walk the panel through your governing formula, physical reasoning, and final result.`,
+        keywords: uniqKw.length ? uniqKw : ['formula', 'stress', 'efficiency', 'ratio', 'energy'],
+        idealPoints: [
+          officialOpt ? `Target Analytical Result / Conclusion: ${officialOpt}.` : 'State the governing conservation law and boundary conditions clearly.',
+          cleanExplain ? `Step-by-Step Derivation: ${cleanExplain}` : 'Substitute values in consistent SI units (N, m, Pa, J, K) and verify order of magnitude.',
+          `Core Concept Tested: ${q.topic || 'Mechanical Engineering'} (${q.difficulty || 'Placement Standard'}).`
+        ],
+        studyTopic: q.topic || 'Mechanical Engineering Core',
+        studyGuideQuery: (q.topic || 'Mohr').split(' ')[0],
+        subjectId: 'som',
+        formula: cleanExplain.slice(0, 110) || 'Apply governing SI conservation equation'
+      };
+    });
+
+    const combinedPool = curatedPool.concat(synthesizedViva).sort(() => Math.random() - 0.5);
+    iv.generatedQuestions = combinedPool.slice(0, Math.max(1, Number(count || iv.sessionQuestionCount || 5)));
+    iv.sessionQuestionCount = iv.generatedQuestions.length;
+    iv.qIndex = 0;
+    iv.sessionScores = {};
+    iv.sessionAnswers = {};
+    iv.evaluated = false;
+    iv.lastEvaluation = null;
+    iv.answerText = '';
+    iv.coachFeedbackHtml = '';
+    iv.sessionFinished = false;
+    iv.qTimerSec = 180;
+    return iv.generatedQuestions;
+  }
+
+  function getActiveInterviewQuestions() {
+    const iv = state.interviewState;
+    if (!Array.isArray(iv.generatedQuestions) || !iv.generatedQuestions.length) {
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+    }
+    return iv.generatedQuestions;
+  }
+
+  function startHumanAvatarAnimationLoop() {
+    if (avatarAnimIntervalId) clearInterval(avatarAnimIntervalId);
+    let tick = 0;
+    avatarAnimIntervalId = setInterval(() => {
+      if (!state.interviewState.activeFullscreen) return;
+      tick += 1;
+      const iv = state.interviewState;
+      const mouthEl = document.getElementById('avatar-mouth-shape');
+      const jawEl = document.getElementById('avatar-jaw-group');
+      const eyesEl = document.getElementById('avatar-eyes-group');
+      const headEl = document.getElementById('avatar-head-group');
+      const waveBars = document.querySelectorAll('.avatar-wave-bar');
+
+      // Lip-sync mouth opening when AI interviewer is speaking
+      if (iv.isSpeaking) {
+        const openH = [3, 9, 5, 12, 4, 10, 6][tick % 7];
+        if (mouthEl) {
+          mouthEl.setAttribute('ry', String(openH));
+          mouthEl.setAttribute('rx', String(openH > 7 ? 11 : 9));
+          mouthEl.setAttribute('fill', '#7F1D1D');
+        }
+        if (jawEl) jawEl.setAttribute('transform', `translate(0, ${(openH * 0.25).toFixed(1)})`);
+        waveBars.forEach((bar, idx) => {
+          const h = 8 + ((tick * 7 + idx * 11) % 24);
+          bar.style.height = `${h}px`;
+        });
+      } else {
+        if (mouthEl) {
+          mouthEl.setAttribute('ry', '2.2');
+          mouthEl.setAttribute('rx', '10');
+          mouthEl.setAttribute('fill', '#991B1B');
+        }
+        if (jawEl) jawEl.setAttribute('transform', 'translate(0, 0)');
+        waveBars.forEach((bar, idx) => {
+          const h = iv.isListening ? (6 + ((tick * 5 + idx * 9) % 18)) : 4;
+          bar.style.height = `${h}px`;
+        });
+      }
+
+      // Natural human eye blink every ~28 ticks (~3.1 seconds)
+      const isBlinking = (tick % 28 === 0) || (tick % 28 === 1);
+      if (eyesEl) {
+        eyesEl.setAttribute('transform', isBlinking ? 'scale(1, 0.12)' : 'scale(1, 1)');
+      }
+
+      // Subtle human head nod/tilt when listening or speaking
+      if (headEl) {
+        const nodY = iv.isListening ? (Math.sin(tick * 0.35) * 2.2) : (iv.isSpeaking ? Math.sin(tick * 0.45) * 1.5 : 0);
+        const tiltDeg = Math.sin(tick * 0.18) * 1.4;
+        headEl.setAttribute('transform', `translate(0, ${nodY.toFixed(1)}) rotate(${tiltDeg.toFixed(2)}, 110, 105)`);
+      }
+    }, 110);
+  }
+
+  function renderHumanInterviewerAvatarSvg(iv) {
+    const personaLabel = iv.voicePersona === 'female-panel'
+      ? 'Dr. Ananya Rao (Senior R&D & HR Panelist)'
+      : iv.voicePersona === 'fast-tech'
+        ? 'Prof. Vikram Prabhu (Principal CAE Examiner)'
+        : 'Dr. Rajeev Narayanan (Chief Mechanical Panelist)';
+
+    const hairPath = iv.voicePersona === 'female-panel'
+      ? '<path d="M58 95 C55 42, 165 42, 162 95 C168 125, 166 155, 154 168 C150 135, 148 110, 145 95 C130 72, 90 72, 75 95 C72 110, 70 135, 66 168 C54 155, 52 125, 58 95 Z" fill="#1E293B"/>'
+      : '<path d="M64 88 C64 46, 156 46, 156 88 C150 68, 130 62, 110 62 C90 62, 70 68, 64 88 Z" fill="#1E293B"/>';
+
+    return `
+      <div class="bg-slate-900 text-white rounded-2xl border border-blue-800/80 p-4 shadow-xl flex flex-col justify-between space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 block">🧑 Human-Motion AI Panelist</span>
+            <h3 class="text-xs sm:text-sm font-extrabold text-white">${escapeHtml(personaLabel)}</h3>
+          </div>
+          <span id="iv-voice-status-badge" class="px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[10px]">
+            ${iv.isSpeaking ? '🔊 Speaking (Lip-Sync ON)' : iv.isListening ? '🔴 Listening & Nodding' : '🎙️ Ready'}
+          </span>
+        </div>
+
+        <!-- Animated Human Interviewer Portrait with Lip-Sync, Eye Blink & Head Motion -->
+        <div class="relative bg-gradient-to-b from-slate-800 to-slate-950 rounded-2xl border border-slate-700 p-2 flex items-center justify-center overflow-hidden">
+          <svg viewBox="0 0 220 195" class="w-44 h-40">
+            <!-- Studio Backdrop Glow -->
+            <circle cx="110" cy="105" r="76" fill="rgba(37,99,235,0.14)"/>
+            <!-- Shoulders & Formal Blazer + Tie -->
+            <path d="M36 195 C42 152, 75 144, 110 144 C145 144, 178 152, 184 195 Z" fill="#0F172A" stroke="#334155" stroke-width="2"/>
+            <polygon points="94,145 110,185 126,145" fill="#F8FAFC"/>
+            <polygon points="106,152 114,152 116,188 104,188" fill="#2563EB"/>
+            <!-- Neck -->
+            <rect x="97" y="126" width="26" height="24" rx="8" fill="#F1C27D"/>
+
+            <!-- Animated Head Group (Nods & Tilts Naturally) -->
+            <g id="avatar-head-group" transform="translate(0,0)">
+              <!-- Ears -->
+              <ellipse cx="64" cy="102" rx="6" ry="11" fill="#E0AC69"/>
+              <ellipse cx="156" cy="102" rx="6" ry="11" fill="#E0AC69"/>
+              <!-- Face Contour -->
+              <rect x="66" y="54" width="88" height="84" rx="38" fill="#F1C27D" stroke="#D19A56" stroke-width="1.5"/>
+              <!-- Hair -->
+              ${hairPath}
+              <!-- Eyebrows -->
+              <path d="M80 86 Q91 81 101 85" fill="none" stroke="#1E293B" stroke-width="3" stroke-linecap="round"/>
+              <path d="M119 85 Q129 81 140 86" fill="none" stroke="#1E293B" stroke-width="3" stroke-linecap="round"/>
+              <!-- Engineering Glasses Frame -->
+              <rect x="76" y="89" width="28" height="17" rx="4" fill="rgba(56,189,248,0.12)" stroke="#334155" stroke-width="2"/>
+              <rect x="116" y="89" width="28" height="17" rx="4" fill="rgba(56,189,248,0.12)" stroke="#334155" stroke-width="2"/>
+              <line x1="104" y1="96" x2="116" y2="96" stroke="#334155" stroke-width="2"/>
+
+              <!-- Blinking Eyes Group -->
+              <g id="avatar-eyes-group" style="transform-origin: 110px 97px;">
+                <ellipse cx="90" cy="97" rx="6.5" ry="4.5" fill="#FFFFFF"/>
+                <circle cx="90" cy="97" r="3" fill="#0F172A"/>
+                <circle cx="91.2" cy="95.8" r="1" fill="#FFFFFF"/>
+                <ellipse cx="130" cy="97" rx="6.5" ry="4.5" fill="#FFFFFF"/>
+                <circle cx="130" cy="97" r="3" fill="#0F172A"/>
+                <circle cx="131.2" cy="95.8" r="1" fill="#FFFFFF"/>
+              </g>
+
+              <!-- Nose -->
+              <path d="M110 96 L107 111 L114 112" fill="none" stroke="#C68642" stroke-width="2" stroke-linecap="round"/>
+
+              <!-- Animated Jaw & Lip-Sync Mouth -->
+              <g id="avatar-jaw-group">
+                <ellipse id="avatar-mouth-shape" cx="110" cy="123" rx="10" ry="2.2" fill="#991B1B" stroke="#7F1D1D" stroke-width="1.5"/>
+                <path d="M103 122 Q110 124 117 122" fill="none" stroke="#FCA5A5" stroke-width="1"/>
+              </g>
+            </g>
+          </svg>
+
+          <!-- Live Audio Waveform Visualizer Overlay -->
+          <div class="absolute bottom-2 right-2.5 flex items-end gap-1 h-7 px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-800">
+            ${[1, 2, 3, 4, 5, 6].map(() => `<span class="avatar-wave-bar w-1 bg-blue-400 rounded-full transition-all" style="height: 5px;"></span>`).join('')}
+          </div>
+        </div>
+
+        <!-- Selectable Audio Voice, Persona & Speed Controls -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+          <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5" for="iv-persona-select">Interviewer Voice Persona</label>
+            <select id="iv-persona-select" class="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] font-bold text-white">
+              <option value="male-panel" ${iv.voicePersona === 'male-panel' ? 'selected' : ''}>🎙️ Male Chief Panelist (Deep 0.92p)</option>
+              <option value="female-panel" ${iv.voicePersona === 'female-panel' ? 'selected' : ''}>🎙️ Female R&amp;D Panelist (Clear 1.12p)</option>
+              <option value="fast-tech" ${iv.voicePersona === 'fast-tech' ? 'selected' : ''}>🎙️ Fast Technical Examiner (1.12×)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5" for="iv-browser-voice-select">Selectable System Audio Voice</label>
+            <select id="iv-browser-voice-select" class="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] font-semibold text-white">
+              <option value="auto-in">Auto English (India / Panel Default)</option>
+              ${refreshBrowserVoices().map(v => `
+                <option value="${escapeHtml(v.voiceURI)}" ${iv.selectedVoiceURI === v.voiceURI ? 'selected' : ''}>
+                  ${escapeHtml(v.name)} (${escapeHtml(v.lang)})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function speakInterviewText(textToRead, onDoneCallback = null) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      if (typeof onDoneCallback === 'function') onDoneCallback();
+      return;
+    }
     try {
       window.speechSynthesis.cancel();
+      const iv = state.interviewState;
       const cleanSpeech = String(textToRead || '')
+        .replace(/\[Self-Generated Panel Question[^\]]*\]/g, '')
         .replace(/σ_x/g, 'sigma x')
         .replace(/σ_y/g, 'sigma y')
         .replace(/τ_xy/g, 'tau x y')
@@ -5516,25 +6164,48 @@ function formatReadableSyllabus(rawText) {
         .replace(/×|·/g, ' times ');
 
       const utter = new SpeechSynthesisUtterance(cleanSpeech);
-      utter.rate = 0.98;
-      utter.pitch = 1.0;
-      utter.lang = 'en-IN';
-      state.interviewState.isSpeaking = true;
+      const voices = refreshBrowserVoices();
+
+      if (iv.selectedVoiceURI && iv.selectedVoiceURI !== 'auto-in') {
+        const matchedVoice = voices.find(v => v.voiceURI === iv.selectedVoiceURI || v.name === iv.selectedVoiceURI);
+        if (matchedVoice) utter.voice = matchedVoice;
+      } else if (voices.length) {
+        const preferred = voices.find(v => /en-IN|India/i.test(v.lang)) || voices.find(v => /en/i.test(v.lang)) || voices[0];
+        if (preferred) utter.voice = preferred;
+      }
+
+      if (iv.voicePersona === 'male-panel') {
+        utter.pitch = 0.90;
+        utter.rate = iv.speechRate || 0.98;
+      } else if (iv.voicePersona === 'female-panel') {
+        utter.pitch = 1.14;
+        utter.rate = iv.speechRate || 1.0;
+      } else {
+        utter.pitch = 1.0;
+        utter.rate = 1.12;
+      }
+
+      iv.isSpeaking = true;
       const statusBadge = document.getElementById('iv-voice-status-badge');
       if (statusBadge) {
-        statusBadge.textContent = '🔊 AI Speaking...';
-        statusBadge.className = 'px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-extrabold text-[11px] animate-pulse';
+        statusBadge.textContent = '🔊 Speaking (Lip-Sync ON)';
+        statusBadge.className = 'px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 font-extrabold text-[10px] animate-pulse';
       }
+
       utter.onend = () => {
-        state.interviewState.isSpeaking = false;
+        iv.isSpeaking = false;
         const sb = document.getElementById('iv-voice-status-badge');
         if (sb) {
           sb.textContent = '🎙️ Voice + Text Ready';
-          sb.className = 'px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[11px]';
+          sb.className = 'px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[10px]';
+        }
+        if (typeof onDoneCallback === 'function') onDoneCallback();
+        else if (iv.autoListenAfterSpeak && iv.activeFullscreen && !iv.isListening && !iv.evaluated) {
+          toggleVoiceMicrophoneInput();
         }
       };
       utter.onerror = () => {
-        state.interviewState.isSpeaking = false;
+        iv.isSpeaking = false;
       };
       window.speechSynthesis.speak(utter);
     } catch {}
@@ -5550,7 +6221,7 @@ function formatReadableSyllabus(rawText) {
     const sb = document.getElementById('iv-voice-status-badge');
     if (sb) {
       sb.textContent = '🎙️ Voice + Text Ready';
-      sb.className = 'px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[11px]';
+      sb.className = 'px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[10px]';
     }
   }
 
@@ -5574,7 +6245,7 @@ function formatReadableSyllabus(rawText) {
       }
       if (statusBadge) {
         statusBadge.textContent = '✓ Voice + Text Combined';
-        statusBadge.className = 'px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[11px]';
+        statusBadge.className = 'px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[10px]';
       }
       return;
     }
@@ -5595,8 +6266,8 @@ function formatReadableSyllabus(rawText) {
         micBtn.className = 'px-4 py-2 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg animate-pulse flex items-center gap-1.5';
       }
       if (statusBadge) {
-        statusBadge.textContent = '🔴 Listening & Typing Live...';
-        statusBadge.className = 'px-3 py-1 rounded-full bg-rose-600 text-white font-extrabold text-[11px] animate-pulse';
+        statusBadge.textContent = '🔴 Listening & Nodding...';
+        statusBadge.className = 'px-2.5 py-1 rounded-full bg-rose-600 text-white font-extrabold text-[10px] animate-pulse';
       }
 
       rec.onresult = (event) => {
@@ -5636,18 +6307,18 @@ function formatReadableSyllabus(rawText) {
   function evaluateInterviewResponse(qItem, userAnswer) {
     const clean = String(userAnswer || '').trim();
     const lower = clean.toLowerCase();
-    const matchedKeywords = qItem.keywords.filter(kw => lower.includes(kw.toLowerCase()));
+    const matchedKeywords = (qItem.keywords || []).filter(kw => lower.includes(kw.toLowerCase()));
     const wordCount = clean ? clean.split(/\s+/).length : 0;
 
-    const kwRatio = matchedKeywords.length / Math.max(1, qItem.keywords.length);
-    const lengthBonus = Math.min(25, Math.round(wordCount / 2.5));
-    const rawScore = clean.length < 10 ? 0 : Math.min(98, Math.round(kwRatio * 75 + lengthBonus));
+    const kwRatio = matchedKeywords.length / Math.max(1, (qItem.keywords || []).length);
+    const lengthBonus = Math.min(25, Math.round(wordCount / 2.2));
+    const rawScore = clean.length < 8 ? 0 : Math.min(98, Math.round(kwRatio * 75 + lengthBonus));
 
-    const missingKeywords = qItem.keywords.filter(kw => !lower.includes(kw.toLowerCase()));
+    const missingKeywords = (qItem.keywords || []).filter(kw => !lower.includes(kw.toLowerCase()));
 
     const recommendedGuides = state.guides.filter(g => {
       const hay = `${g.name || ''} ${g.title || ''} ${g.topic || ''} ${g.idea || ''}`.toLowerCase();
-      return hay.includes(qItem.studyGuideQuery.toLowerCase()) || hay.includes(qItem.studyTopic.split(' ')[0].toLowerCase());
+      return hay.includes((qItem.studyGuideQuery || 'Mohr').toLowerCase()) || hay.includes((qItem.studyTopic || 'Design').split(' ')[0].toLowerCase());
     }).slice(0, 3);
 
     return {
@@ -5656,32 +6327,58 @@ function formatReadableSyllabus(rawText) {
       matchedKeywords,
       missingKeywords,
       strengths: matchedKeywords.length
-        ? `Strong technical terminology used: ${matchedKeywords.join(', ')}.`
-        : 'Attempt logged. Include explicit governing equations, SI units, and physical mechanisms to raise your technical interview score.',
+        ? `Strong technical keywords covered: ${matchedKeywords.join(', ')}.`
+        : 'Attempt recorded. State the exact governing formula, SI units, and physical mechanism for higher panel marks.',
       gaps: missingKeywords.length
-        ? `Key concepts to add for full panel marks: ${missingKeywords.slice(0, 6).join(', ')}.`
-        : 'Comprehensive coverage of all expected engineering keywords!',
+        ? `Key concepts to include for 10/10 panel score: ${missingKeywords.slice(0, 6).join(', ')}.`
+        : 'Excellent coverage of all expected engineering terminology!',
       recommendedGuides,
       qItem
     };
   }
 
+  function startInterviewQuestionTimer() {
+    if (interviewQuestionTimerId) clearInterval(interviewQuestionTimerId);
+    const iv = state.interviewState;
+    iv.qTimerSec = 180;
+    interviewQuestionTimerId = setInterval(() => {
+      if (!iv.activeFullscreen || iv.sessionFinished) return;
+      iv.qTimerSec = Math.max(0, iv.qTimerSec - 1);
+      const tEl = document.getElementById('iv-q-timer-readout');
+      if (tEl) {
+        const mm = String(Math.floor(iv.qTimerSec / 60)).padStart(2, '0');
+        const ss = String(iv.qTimerSec % 60).padStart(2, '0');
+        tEl.textContent = `⏱ ${mm}:${ss}`;
+      }
+    }, 1000);
+  }
+
   function enterInterviewFullscreen(startMicImmediately = false) {
-    state.interviewState.activeFullscreen = true;
+    const iv = state.interviewState;
+    iv.activeFullscreen = true;
+    iv.sessionFinished = false;
+    state.proctorState.warningCount = 0;
+    state.proctorState.lastAlert = '';
+    if (!Array.isArray(iv.generatedQuestions) || !iv.generatedQuestions.length) {
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+    }
     try {
       if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(() => {});
       }
     } catch {}
     syncExamFullscreenMode(true);
+    startProctorCameraAndDetector();
+    startHumanAvatarAnimationLoop();
+    startInterviewQuestionTimer();
     renderPlacementPrep();
-    const iv = state.interviewState;
-    const trackQuestions = AI_INTERVIEW_QUESTION_BANK[iv.track] || AI_INTERVIEW_QUESTION_BANK['Mechanical Design / CAD / GD&T (Creo / NX)'];
+
+    const trackQuestions = getActiveInterviewQuestions();
     const activeQ = trackQuestions[iv.qIndex] || trackQuestions[0];
     if (startMicImmediately) {
       setTimeout(() => toggleVoiceMicrophoneInput(), 250);
     } else if (iv.autoSpeak && activeQ) {
-      setTimeout(() => speakInterviewText(`Question ${iv.qIndex + 1} for ${iv.company}. ${activeQ.q}`), 250);
+      setTimeout(() => speakInterviewText(`Question ${iv.qIndex + 1} of ${trackQuestions.length}. ${activeQ.q}`), 300);
     }
   }
 
@@ -5690,6 +6387,15 @@ function formatReadableSyllabus(rawText) {
     if (activeSpeechRecognition) {
       try { activeSpeechRecognition.stop(); } catch {}
     }
+    if (avatarAnimIntervalId) {
+      clearInterval(avatarAnimIntervalId);
+      avatarAnimIntervalId = null;
+    }
+    if (interviewQuestionTimerId) {
+      clearInterval(interviewQuestionTimerId);
+      interviewQuestionTimerId = null;
+    }
+    stopProctorCameraAndDetector();
     state.interviewState.isListening = false;
     state.interviewState.activeFullscreen = false;
     try {
@@ -5703,89 +6409,176 @@ function formatReadableSyllabus(rawText) {
 
   function renderPlacementPrep() {
     const iv = state.interviewState;
-    const trackQuestions = AI_INTERVIEW_QUESTION_BANK[iv.track] || AI_INTERVIEW_QUESTION_BANK['Mechanical Design / CAD / GD&T (Creo / NX)'];
-    iv.qIndex = Math.min(Math.max(0, iv.qIndex), trackQuestions.length - 1);
-    const activeQ = trackQuestions[iv.qIndex];
+    const trackQuestions = getActiveInterviewQuestions();
+    iv.qIndex = Math.min(Math.max(0, iv.qIndex), Math.max(0, trackQuestions.length - 1));
+    const activeQ = trackQuestions[iv.qIndex] || AI_INTERVIEW_QUESTION_BANK['Mechanical Design / CAD / GD&T (Creo / NX)'][0];
 
     // =========================================================================
-    // FULL-SCREEN COMBINED VOICE + TEXT INTERVIEW ROOM
-    // (Removes all other portals, headers, sidebars & combines Voice + Text in 1 unified room)
+    // FULL-SCREEN VERSION 5 HUMAN-MOTION AI INTERVIEW & PROCTORED ROOM
+    // (Self-generating like Mock Test + Selectable Audio + Face Motion Avatar + Webcam Proctor)
     // =========================================================================
     if (iv.activeFullscreen) {
       syncExamFullscreenMode(true);
+      const answeredIndices = Object.keys(iv.sessionScores);
+      const avgSessionScore = answeredIndices.length
+        ? Math.round(answeredIndices.reduce((acc, k) => acc + Number(iv.sessionScores[k] || 0), 0) / answeredIndices.length)
+        : 0;
+      const mins = String(Math.floor((iv.qTimerSec || 180) / 60)).padStart(2, '0');
+      const secs = String((iv.qTimerSec || 180) % 60).padStart(2, '0');
+
+      // Check if user finished all questions in the self-generated interview mock set
+      if (iv.sessionFinished) {
+        const verdict = avgSessionScore >= 75
+          ? 'SELECTED — Tier-1 Core Mechanical Offer Ready'
+          : avgSessionScore >= 50
+            ? 'SHORTLISTED — Revise Recommended Study Guides for Final Round'
+            : 'NEEDS REVISION — Practice Governing Derivations & Re-Attempt';
+
+        container.innerHTML = `
+          <div class="max-w-5xl mx-auto py-4 space-y-5">
+            <div class="bg-slate-900 text-white rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-2 border-emerald-500 shadow-2xl">
+              <div class="space-y-1">
+                <span class="text-xs font-extrabold uppercase tracking-wider text-amber-400">
+                  🏢 Version 5 Self-Generated AI Interview Session Complete
+                </span>
+                <h1 class="text-2xl font-extrabold">Overall Interview Score: ${avgSessionScore}% (${answeredIndices.length}/${trackQuestions.length} Answered)</h1>
+                <p class="text-xs text-emerald-300 font-bold">Panel Verdict: ${escapeHtml(verdict)} · Proctoring Warnings: ${state.proctorState.warningCount}</p>
+              </div>
+              <div class="flex flex-wrap gap-2.5">
+                <button type="button" id="iv-regenerate-new-set-btn" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow">
+                  🎲 Self-Generate New Interview Set →
+                </button>
+                <button type="button" id="iv-exit-fs-btn" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow">
+                  ✕ Exit Full-Screen Interview
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              ${trackQuestions.map((qIt, idx) => {
+                const sc = iv.sessionScores[idx] ?? 0;
+                const uAns = iv.sessionAnswers[idx] || '— (Not Answered)';
+                return `
+                  <article class="bg-white rounded-2xl border border-slate-200 p-5 shadow-md space-y-3">
+                    <div class="flex items-center justify-between">
+                      <span class="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold text-xs">Interview Q${idx + 1} · ${escapeHtml(qIt.studyTopic)}</span>
+                      <span class="px-3 py-1 rounded-full font-extrabold text-xs ${sc >= 70 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">Score: ${sc}/100</span>
+                    </div>
+                    <p class="text-sm font-bold text-slate-900">${escapeHtml(qIt.q)}</p>
+                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700"><b>Your Combined Voice/Text Answer:</b> ${escapeHtml(uAns)}</div>
+                    <div class="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs text-slate-800 space-y-1">
+                      <b>Model Panel Answer Points:</b>
+                      <ul class="list-disc pl-4">${(qIt.idealPoints || []).map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
+                    </div>
+                  </article>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+        document.getElementById('iv-regenerate-new-set-btn')?.addEventListener('click', () => {
+          generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+          enterInterviewFullscreen(false);
+        });
+        document.getElementById('iv-exit-fs-btn')?.addEventListener('click', exitInterviewFullscreen);
+        return;
+      }
+
       container.innerHTML = `
-        <div class="max-w-5xl mx-auto py-2 space-y-5">
-          <!-- Top Full-Screen Bar (Only Interview Controls — All Other Sections Removed) -->
-          <div class="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 shadow-xl border border-blue-700/70">
+        <div class="max-w-6xl mx-auto py-1 space-y-4">
+          ${renderProctorWarningBannerHtml()}
+
+          <!-- Top Full-Screen Header Bar (All Other Sections Hidden) -->
+          <div class="bg-slate-900 text-white rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl border border-blue-700/70">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-lg font-black shadow">🎙️</div>
               <div>
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
-                    ⛶ Full-Screen Combined Voice + Text AI Interview
+                    ⛶ Version 5 Self-Generating Human-Motion AI Interview · Question ${iv.qIndex + 1} of ${trackQuestions.length}
                   </span>
-                  <span id="iv-voice-status-badge" class="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[11px]">
-                    🎙️ Voice + Text Ready
+                  <span class="px-2.5 py-0.5 rounded-full bg-blue-950 text-blue-200 border border-blue-700 font-bold text-[11px]">
+                    Session Avg: ${avgSessionScore}%
                   </span>
                 </div>
-                <h1 class="text-base sm:text-lg font-extrabold text-white mt-0.5">${escapeHtml(iv.company)}</h1>
+                <h1 class="text-sm sm:text-base font-extrabold text-white mt-0.5">${escapeHtml(iv.company)}</h1>
               </div>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
-              <label class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-200 bg-slate-800 px-3 py-2 rounded-xl border border-slate-700 cursor-pointer">
-                <input id="iv-autospeak-toggle" type="checkbox" ${iv.autoSpeak ? 'checked' : ''} class="rounded text-blue-500">
-                <span>🔊 Auto Voice</span>
-              </label>
-              <button type="button" id="iv-exit-fs-btn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow transition">
-                ✕ Exit Full-Screen Interview
+              <div id="iv-q-timer-readout" class="px-3 py-1.5 rounded-xl bg-blue-950 border border-blue-700 font-mono text-xs sm:text-sm font-extrabold text-amber-300">
+                ⏱ ${mins}:${secs}
+              </div>
+              <button type="button" id="iv-self-gen-btn" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shadow transition">
+                🎲 Self-Generate New Set
+              </button>
+              <button type="button" id="iv-finish-session-btn" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow transition">
+                ✓ Finish &amp; Scorecard
+              </button>
+              <button type="button" id="iv-exit-fs-btn" class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow transition">
+                ✕ Exit
               </button>
             </div>
           </div>
 
-          <!-- Unified Combined Voice + Text Interview Console -->
-          <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-7 shadow-2xl space-y-5">
-            <!-- Track, Company & Question Switcher -->
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-4 border-b border-slate-200">
-              <div>
-                <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-track-select">Interview Track</label>
-                <select id="iv-track-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold bg-white text-slate-900">
+          <!-- Top Visual Row: Left = Human-Motion AI Panelist Avatar + Selectable Audio | Right = Live Candidate Face & Motion Detector Camera -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+            <div class="lg:col-span-2">
+              ${renderHumanInterviewerAvatarSvg(iv)}
+            </div>
+            <div class="flex flex-col justify-between bg-slate-900 rounded-2xl border border-slate-700 p-3 space-y-2">
+              ${renderProctorCameraWidgetHtml(false)}
+              <div class="flex flex-wrap items-center justify-between gap-2 px-1 pt-1 border-t border-slate-800 text-[11px] text-slate-300">
+                <label class="inline-flex items-center gap-1.5 cursor-pointer font-bold">
+                  <input id="iv-autospeak-toggle" type="checkbox" ${iv.autoSpeak ? 'checked' : ''} class="rounded text-blue-500">
+                  <span>🔊 Auto-Speak</span>
+                </label>
+                <label class="inline-flex items-center gap-1.5 cursor-pointer font-bold text-amber-300">
+                  <input id="iv-autolisten-toggle" type="checkbox" ${iv.autoListenAfterSpeak ? 'checked' : ''} class="rounded text-amber-400">
+                  <span>🎤 Auto-Mic After AI Speaks</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Unified Combined Voice + Text Interview Question & Answer Console -->
+          <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-6 shadow-2xl space-y-4">
+            <!-- Track, Set Size & Question Navigation -->
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 pb-3 border-b border-slate-200">
+              <div class="sm:col-span-2">
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1" for="iv-track-select">Interview Domain Track (Self-Generating)</label>
+                <select id="iv-track-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white text-slate-900">
+                  <option value="Self-Generated Mixed Core + Aptitude (Like Mock Test)" ${iv.track === 'Self-Generated Mixed Core + Aptitude (Like Mock Test)' ? 'selected' : ''}>⚡ Self-Generated Mixed Core + Aptitude (Like Mock Test)</option>
                   ${Object.keys(AI_INTERVIEW_QUESTION_BANK).map(t => `
                     <option value="${escapeHtml(t)}" ${iv.track === t ? 'selected' : ''}>${escapeHtml(t)}</option>
                   `).join('')}
                 </select>
               </div>
               <div>
-                <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-company-select">Recruiter Panel</label>
-                <select id="iv-company-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold bg-white text-slate-900">
-                  ${[
-                    'SJCE Placement Drive (All Core & Tech Recruiters)',
-                    'L&T & LTTS (Mysuru / Bengaluru Core Engineering)',
-                    'Honeywell Aerospace & Airbus India',
-                    'Bosch India & General Motors (Automotive R&D)',
-                    'Siemens Energy, Caterpillar & Schneider Electric',
-                    'GE HealthCare & BEML (Mysuru / Bengaluru)',
-                    'Bizotic / AM2 / AON / TCS NQT Placement Panel'
-                  ].map(c => `<option value="${escapeHtml(c)}" ${iv.company === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1" for="iv-set-count-select">Questions in Set</label>
+                <select id="iv-set-count-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white text-slate-900">
+                  <option value="5" ${iv.sessionQuestionCount === 5 ? 'selected' : ''}>5 Questions Mock Interview</option>
+                  <option value="10" ${iv.sessionQuestionCount === 10 ? 'selected' : ''}>10 Questions Full Interview</option>
+                  <option value="15" ${iv.sessionQuestionCount === 15 ? 'selected' : ''}>15 Questions Stress Interview</option>
                 </select>
               </div>
               <div class="flex items-end gap-2">
-                <button type="button" id="iv-prev-q-btn" class="px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-800">
+                <button type="button" id="iv-prev-q-btn" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-800">
                   ← Prev
                 </button>
                 <button type="button" id="iv-next-q-btn" class="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold">
-                  Next Question (${iv.qIndex + 1}/${trackQuestions.length}) →
+                  Next (${iv.qIndex + 1}/${trackQuestions.length}) →
                 </button>
               </div>
             </div>
 
-            <!-- Combined Voice + Text Question Box -->
-            <div class="p-5 rounded-2xl bg-slate-900 text-white space-y-3 shadow-md">
+            <!-- Active Interviewer Question Box with Selectable Audio Playback -->
+            <div class="p-4 sm:p-5 rounded-2xl bg-slate-900 text-white space-y-2.5 shadow-md">
               <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-blue-300">
                 <span class="font-extrabold">🎙️ QUESTION ${iv.qIndex + 1} OF ${trackQuestions.length} · ${escapeHtml(activeQ.studyTopic)}</span>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                   <button type="button" id="iv-speak-q-btn" class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">
-                    🔊 Speak Question
+                    🔊 Speak Question (Lip-Sync)
                   </button>
                   <button type="button" id="iv-stop-speech-btn" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold">
                     🔇 Mute
@@ -5797,11 +6590,11 @@ function formatReadableSyllabus(rawText) {
               </p>
             </div>
 
-            <!-- Combined Voice + Text Answer Input Box (Single Unified Input & Single Unified Submit) -->
+            <!-- Combined Voice + Text Answer Input Box -->
             <div class="space-y-3">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <label class="text-xs sm:text-sm font-extrabold text-slate-900" for="iv-answer-input">
-                  Combined Voice + Text Answer (Speak via 🎤 Mic and/or Type in the same box):
+                  Combined Voice + Text Response (Speak into 🎤 Mic and/or Type below):
                 </label>
                 <div class="flex flex-wrap items-center gap-2">
                   <button type="button" id="iv-mic-record-btn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5">
@@ -5813,13 +6606,13 @@ function formatReadableSyllabus(rawText) {
                 </div>
               </div>
 
-              <textarea id="iv-answer-input" rows="5" class="w-full p-4 rounded-xl border-2 border-slate-300 text-xs sm:text-sm text-slate-900 leading-relaxed focus:border-blue-600 focus:outline-none" placeholder="Speak into your microphone (words appear here automatically) and edit/type your governing formulas and answer here...">${escapeHtml(iv.answerText)}</textarea>
+              <textarea id="iv-answer-input" rows="4" class="w-full p-4 rounded-xl border-2 border-slate-300 text-xs sm:text-sm text-slate-900 leading-relaxed focus:border-blue-600 focus:outline-none" placeholder="Speak into your microphone (words stream here live) or type your governing formula and explanation here...">${escapeHtml(iv.answerText)}</textarea>
 
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <button type="button" id="iv-evaluate-btn" class="w-full sm:w-auto px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm shadow-lg transition">
-                  🤖 Submit &amp; Evaluate (Combined Voice + Text + Study Guide Suggester) →
+                  🤖 Submit &amp; Evaluate Answer (Voice Feedback + Study Guide Suggester) →
                 </button>
-                <span class="text-[11px] text-slate-500">Evaluates your spoken + written answer, speaks feedback aloud &amp; suggests Study Guides.</span>
+                <span class="text-[11px] text-slate-500">Logs score for Q${iv.qIndex + 1}, speaks feedback aloud with lip-sync &amp; recommends Study Guides.</span>
               </div>
             </div>
 
@@ -5831,7 +6624,18 @@ function formatReadableSyllabus(rawText) {
         </div>
       `;
 
+      bindProctorBannerEvents();
       document.getElementById('iv-exit-fs-btn')?.addEventListener('click', exitInterviewFullscreen);
+      document.getElementById('iv-self-gen-btn')?.addEventListener('click', () => {
+        generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+        enterInterviewFullscreen(false);
+        showToast('Self-generated a brand new AI Interview question set!', 'success');
+      });
+      document.getElementById('iv-finish-session-btn')?.addEventListener('click', () => {
+        stopInterviewSpeech();
+        iv.sessionFinished = true;
+        renderPlacementPrep();
+      });
       bindInterviewInteractiveControls(iv, trackQuestions, activeQ);
       bindEvaluationStudyGuideLinks();
       return;
@@ -5840,6 +6644,7 @@ function formatReadableSyllabus(rawText) {
     // =========================================================================
     // NORMAL HUB VIEW (WHEN NOT IN FULL-SCREEN INTERVIEW)
     // =========================================================================
+    stopProctorCameraAndDetector();
     syncExamFullscreenMode(false);
 
     const pf = state.portalFilter;
@@ -5863,40 +6668,56 @@ function formatReadableSyllabus(rawText) {
 
     container.innerHTML = `
       <div class="space-y-7">
-        <!-- 1. TOP CARD: COMBINED VOICE + TEXT AI INTERVIEW LAUNCHER (OPENS FULL SCREEN & REMOVES OTHER SECTIONS) -->
-        <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-6 shadow-md space-y-4">
-          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div class="space-y-1.5">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="text-[11px] font-extrabold uppercase tracking-wider text-white bg-blue-600 px-3 py-1 rounded-full">
-                  🎙️ Full-Screen Combined Voice + Text AI Interview Taker
-                </span>
-                <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[11px]">
-                  Auto-Hides All Other Portals During Interview
-                </span>
-              </div>
-              <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                AI Technical Interviewer (Voice + Text Combined) &amp; Study Guide Suggester
-              </h1>
-              <p class="text-xs text-slate-600">
-                Select your engineering track and recruiter panel below, then click <b>Start Full-Screen Interview</b>. While interviewing, all other page sections are removed and Voice + Text work together in one unified console.
-              </p>
+        <!-- 1. TOP CARD: VERSION 5 ACTUAL JOB PROCESS PIPELINE & HUMAN-MOTION SELF-GENERATING AI INTERVIEW LAUNCHER -->
+        <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-6 shadow-md space-y-5">
+          <!-- Version 5 Actual Job Process 3-Stage Pipeline Bar -->
+          <div class="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+                🏢 Version 5 Actual Campus Job Recruitment Process Simulator (Proctored)
+              </span>
+              <span class="text-[11px] text-emerald-300 font-bold">📷 Webcam Face Detector + Motion Sensor + Exit Warning Active</span>
             </div>
-            <div class="flex flex-wrap items-center gap-2.5 shrink-0">
-              <button type="button" id="iv-launch-fs-top-btn" class="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm shadow-lg transition flex items-center gap-2">
-                <span>⛶ Start Full-Screen Interview (Voice + Text)</span>
-                <span>→</span>
-              </button>
-              <button type="button" id="iv-launch-fs-mic-btn" class="px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs sm:text-sm shadow transition flex items-center gap-1.5">
-                <span>🎤 Start with Mic On</span>
-              </button>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700 flex flex-col justify-between gap-2">
+                <div>
+                  <span class="text-[10px] font-extrabold uppercase text-blue-400">Round 1 · Online Screening</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Proctored Aptitude + Core Technical Test</h3>
+                  <p class="text-[11px] text-slate-300 mt-0.5">Timed MCQ exam with Webcam Face Detection, Motion Monitoring &amp; Exit Warnings.</p>
+                </div>
+                <button type="button" id="job-stage1-btn" class="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs">
+                  1️⃣ Start Round 1 Proctored Mock Test →
+                </button>
+              </div>
+              <div class="p-3.5 rounded-xl bg-blue-950/90 border-2 border-amber-400 flex flex-col justify-between gap-2">
+                <div>
+                  <span class="text-[10px] font-extrabold uppercase text-amber-300">Round 2 · Human-Avatar Technical Viva</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Self-Generating Voice + Text AI Interview</h3>
+                  <p class="text-[11px] text-slate-200 mt-0.5">Animated Human Interviewer (lip-sync + eye blink), selectable audio voice &amp; webcam proctoring.</p>
+                </div>
+                <button type="button" id="iv-launch-fs-top-btn" class="w-full py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow">
+                  2️⃣ Start Round 2 Human-Motion AI Interview →
+                </button>
+              </div>
+              <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700 flex flex-col justify-between gap-2">
+                <div>
+                  <span class="text-[10px] font-extrabold uppercase text-emerald-400">Round 3 · Study Guide &amp; 3D Animation Prep</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Things Workshop 3D &amp; Formula Revision</h3>
+                  <p class="text-[11px] text-slate-300 mt-0.5">Revise weak interview topics with interactive 3D animations and synchronized plots.</p>
+                </div>
+                <button type="button" id="job-stage3-btn" class="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs">
+                  3️⃣ Open 3D Animated Study Guides →
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+          <!-- Pre-Launch Configuration for Self-Generating Human-Motion AI Interview -->
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
             <div>
-              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-track-select">Interview Role / Domain Track</label>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-track-select">Self-Generating Interview Track</label>
               <select id="iv-hub-track-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                <option value="Self-Generated Mixed Core + Aptitude (Like Mock Test)" ${iv.track === 'Self-Generated Mixed Core + Aptitude (Like Mock Test)' ? 'selected' : ''}>⚡ Self-Generated Mixed Core + Aptitude (Like Mock Test)</option>
                 ${Object.keys(AI_INTERVIEW_QUESTION_BANK).map(t => `
                   <option value="${escapeHtml(t)}" ${iv.track === t ? 'selected' : ''}>${escapeHtml(t)}</option>
                 `).join('')}
@@ -5915,6 +6736,19 @@ function formatReadableSyllabus(rawText) {
                   'Bizotic / AM2 / AON / TCS NQT Placement Panel'
                 ].map(c => `<option value="${escapeHtml(c)}" ${iv.company === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
               </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-persona-select">Selectable Interviewer Audio &amp; Face</label>
+              <select id="iv-hub-persona-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                <option value="male-panel" ${iv.voicePersona === 'male-panel' ? 'selected' : ''}>🎙️ Male Chief Panelist (Dr. Rajeev)</option>
+                <option value="female-panel" ${iv.voicePersona === 'female-panel' ? 'selected' : ''}>🎙️ Female R&amp;D Panelist (Dr. Ananya)</option>
+                <option value="fast-tech" ${iv.voicePersona === 'fast-tech' ? 'selected' : ''}>🎙️ Fast Technical Examiner (Prof. Vikram)</option>
+              </select>
+            </div>
+            <div class="flex items-end gap-2">
+              <button type="button" id="iv-launch-fs-mic-btn" class="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition">
+                🎤 Launch Full-Screen (Mic + Face Proctor ON)
+              </button>
             </div>
           </div>
         </section>
@@ -5957,12 +6791,12 @@ function formatReadableSyllabus(rawText) {
           </div>
         </div>
 
-        <!-- 3. QUICK LAUNCH APP ICON DOCK (ORDERED: 1. SJCE COLLEGE -> 2. NATS & PROSPLE GENERAL PORTALS -> 3. PREP APPS) -->
+        <!-- 3. QUICK LAUNCH APP ICON DOCK (ORDERED: 1. SJCE COLLEGE -> 2. PROSPLE, NATS & GENERAL PORTALS -> 3. APTITUDE APPS) -->
         <div class="bg-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-lg border border-slate-800 space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <span class="text-[11px] font-extrabold uppercase tracking-wider text-blue-400">Quick-Launch Placement App Dock (1st: SJCE College · 2nd: NATS, Prosple &amp; General Portals · 3rd: Prep Apps)</span>
-              <h3 class="text-base sm:text-lg font-extrabold text-white mt-0.5">1-Click Placement &amp; Internship Portals</h3>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-blue-400">Quick-Launch Placement App Dock (1st: SJCE College · 2nd: Prosple, NATS &amp; General Portals · 3rd: IndiaBIX, PrepInsta, Practica &amp; More)</span>
+              <h3 class="text-base sm:text-lg font-extrabold text-white mt-0.5">1-Click Placement, Global Job &amp; Aptitude Portals</h3>
             </div>
             <span class="text-xs text-slate-400">Click any icon to launch the official portal directly ↗</span>
           </div>
@@ -5976,19 +6810,18 @@ function formatReadableSyllabus(rawText) {
           </div>
         </div>
 
-        <!-- 4. COMPLETE DIRECTORY OF ALL JOB PORTALS (ORDERED: 1. COLLEGE -> 2. NATS/PROSPLE/GENERAL -> 3. PREP APPS -> 4. CORE MECHANICAL OEMs) -->
+        <!-- 4. COMPLETE DIRECTORY OF ALL JOB PORTALS -->
         <section class="space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Ordered Hierarchy: 1st SJCE College · 2nd NATS, Prosple &amp; General Portals · 3rd Prep Apps · 4th Core OEMs</span>
-              <h2 class="text-xl font-extrabold text-slate-900">All Placement, Internship &amp; Core Engineering Portals (${OFFICIAL_JOB_PORTALS.length})</h2>
+              <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Ordered Hierarchy: 1st SJCE College · 2nd Prosple, NATS &amp; General Portals · 3rd Aptitude Portals · 4th Core OEMs</span>
+              <h2 class="text-xl font-extrabold text-slate-900">All Placement, Internship, Diversity &amp; Aptitude Portals (${OFFICIAL_JOB_PORTALS.length})</h2>
             </div>
             <div class="w-full sm:w-64">
-              <input id="portal-search-input" type="search" value="${escapeHtml(pf.search)}" placeholder="Search Prosple, NATS, Internshala, Bosch..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white">
+              <input id="portal-search-input" type="search" value="${escapeHtml(pf.search)}" placeholder="Search Prosple, NATS, Glassdoor, Seek, Xing..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white">
             </div>
           </div>
 
-          <!-- Category Filter Pills -->
           <div class="flex flex-wrap gap-2">
             ${portalCategories.map(cat => `
               <button type="button" data-portal-cat="${escapeHtml(cat)}" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${pf.category === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-700 hover:border-blue-400'}">
@@ -5997,7 +6830,6 @@ function formatReadableSyllabus(rawText) {
             `).join('')}
           </div>
 
-          <!-- Job Portals Grid with Logos -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             ${filteredPortals.map(portal => `
               <div class="bg-white rounded-2xl border ${portal.featured ? 'border-2 border-blue-600 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-400'} p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between gap-4">
@@ -6025,7 +6857,7 @@ function formatReadableSyllabus(rawText) {
                     Open Official Portal ↗
                   </a>
                   <button type="button" data-prep-company="${escapeHtml(portal.name)}" class="py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-xs transition">
-                    🎙️ Full-Screen Interview
+                    🎙️ AI Interview
                   </button>
                 </div>
               </div>
@@ -6035,19 +6867,31 @@ function formatReadableSyllabus(rawText) {
       </div>
     `;
 
-    document.getElementById('iv-launch-fs-top-btn')?.addEventListener('click', () => enterInterviewFullscreen(false));
-    document.getElementById('iv-launch-fs-mic-btn')?.addEventListener('click', () => enterInterviewFullscreen(true));
+    document.getElementById('job-stage1-btn')?.addEventListener('click', () => {
+      switchModule('mock-tests');
+    });
+    document.getElementById('job-stage3-btn')?.addEventListener('click', () => {
+      switchModule('study-guides');
+    });
+    document.getElementById('iv-launch-fs-top-btn')?.addEventListener('click', () => {
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+      enterInterviewFullscreen(false);
+    });
+    document.getElementById('iv-launch-fs-mic-btn')?.addEventListener('click', () => {
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+      enterInterviewFullscreen(true);
+    });
     document.getElementById('iv-hub-track-select')?.addEventListener('change', (e) => {
       iv.track = e.target.value;
-      iv.qIndex = 0;
-      iv.evaluated = false;
-      iv.answerText = '';
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
     });
     document.getElementById('iv-hub-company-select')?.addEventListener('change', (e) => {
       iv.company = e.target.value;
     });
+    document.getElementById('iv-hub-persona-select')?.addEventListener('change', (e) => {
+      iv.voicePersona = e.target.value;
+    });
 
-    // Bind Job Portal Filters
     document.getElementById('portal-search-input')?.addEventListener('input', (e) => {
       pf.search = e.target.value;
       renderPlacementPrep();
@@ -6061,6 +6905,7 @@ function formatReadableSyllabus(rawText) {
     container.querySelectorAll('[data-prep-company]').forEach(btn => {
       btn.addEventListener('click', () => {
         iv.company = btn.dataset.prepCompany;
+        generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
         enterInterviewFullscreen(false);
       });
     });
@@ -6070,6 +6915,18 @@ function formatReadableSyllabus(rawText) {
     document.getElementById('iv-autospeak-toggle')?.addEventListener('change', (e) => {
       iv.autoSpeak = Boolean(e.target.checked);
     });
+    document.getElementById('iv-autolisten-toggle')?.addEventListener('change', (e) => {
+      iv.autoListenAfterSpeak = Boolean(e.target.checked);
+    });
+    document.getElementById('iv-persona-select')?.addEventListener('change', (e) => {
+      iv.voicePersona = e.target.value;
+      renderPlacementPrep();
+      speakInterviewText(`Voice persona switched. Ready for your response.`);
+    });
+    document.getElementById('iv-browser-voice-select')?.addEventListener('change', (e) => {
+      iv.selectedVoiceURI = e.target.value;
+      speakInterviewText(`Audio voice selected for your interview.`);
+    });
     document.getElementById('iv-speak-q-btn')?.addEventListener('click', () => {
       speakInterviewText(`Question ${iv.qIndex + 1} for ${iv.company}. ${activeQ.q}`);
     });
@@ -6078,33 +6935,38 @@ function formatReadableSyllabus(rawText) {
 
     document.getElementById('iv-track-select')?.addEventListener('change', (e) => {
       iv.track = e.target.value;
-      iv.qIndex = 0;
-      iv.evaluated = false;
-      iv.answerText = '';
-      iv.coachFeedbackHtml = '';
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
       renderPlacementPrep();
-      const nextList = AI_INTERVIEW_QUESTION_BANK[iv.track] || trackQuestions;
+      const nextList = getActiveInterviewQuestions();
       if (iv.autoSpeak && nextList[0]) speakInterviewText(nextList[0].q);
     });
-    document.getElementById('iv-company-select')?.addEventListener('change', (e) => {
-      iv.company = e.target.value;
+    document.getElementById('iv-set-count-select')?.addEventListener('change', (e) => {
+      iv.sessionQuestionCount = Number(e.target.value || 5);
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount);
       renderPlacementPrep();
     });
     document.getElementById('iv-prev-q-btn')?.addEventListener('click', () => {
       iv.qIndex = (iv.qIndex - 1 + trackQuestions.length) % trackQuestions.length;
       iv.evaluated = false;
-      iv.answerText = '';
+      iv.answerText = iv.sessionAnswers[iv.qIndex] || '';
       iv.coachFeedbackHtml = '';
+      iv.qTimerSec = 180;
       renderPlacementPrep();
       if (iv.autoSpeak) speakInterviewText(trackQuestions[iv.qIndex].q);
     });
     document.getElementById('iv-next-q-btn')?.addEventListener('click', () => {
-      iv.qIndex = (iv.qIndex + 1) % trackQuestions.length;
-      iv.evaluated = false;
-      iv.answerText = '';
-      iv.coachFeedbackHtml = '';
-      renderPlacementPrep();
-      if (iv.autoSpeak) speakInterviewText(trackQuestions[iv.qIndex].q);
+      if (iv.qIndex + 1 < trackQuestions.length) {
+        iv.qIndex += 1;
+        iv.evaluated = false;
+        iv.answerText = iv.sessionAnswers[iv.qIndex] || '';
+        iv.coachFeedbackHtml = '';
+        iv.qTimerSec = 180;
+        renderPlacementPrep();
+        if (iv.autoSpeak) speakInterviewText(trackQuestions[iv.qIndex].q);
+      } else {
+        iv.sessionFinished = true;
+        renderPlacementPrep();
+      }
     });
     document.getElementById('iv-fill-sample-btn')?.addEventListener('click', () => {
       const ta = document.getElementById('iv-answer-input');
@@ -6121,6 +6983,8 @@ function formatReadableSyllabus(rawText) {
       const ta = document.getElementById('iv-answer-input');
       iv.answerText = ta ? ta.value : '';
       iv.lastEvaluation = evaluateInterviewResponse(activeQ, iv.answerText);
+      iv.sessionScores[iv.qIndex] = iv.lastEvaluation.score;
+      iv.sessionAnswers[iv.qIndex] = iv.answerText;
       iv.evaluated = true;
       iv.coachFeedbackHtml = '<div class="text-xs font-bold text-blue-700 animate-pulse">⚡ Generating combined AI panel feedback...</div>';
       renderPlacementPrep();
@@ -6129,7 +6993,6 @@ function formatReadableSyllabus(rawText) {
         speakInterviewText(`Score ${iv.lastEvaluation.score} out of 100. ${iv.lastEvaluation.strengths} Suggested study guide: ${activeQ.studyTopic}.`);
       }
 
-      // Automatically fetch combined AI Coach feedback in the same unified evaluation
       try {
         const prompt = `Act as a Mechanical Engineering Interview Panelist for ${iv.company}.\nQuestion: ${activeQ.q}\nCandidate Answer: ${iv.answerText || '(Provide model walkthrough)'}\nGive concise feedback, governing formulas, and 1 follow-up viva question.`;
         const res = await invokeAITutor({ question: prompt, topic: activeQ.studyTopic, mode: 'viva' });
@@ -6177,7 +7040,7 @@ function formatReadableSyllabus(rawText) {
             </button>
           </div>
           <ul class="list-disc pl-4 space-y-1.5 text-xs text-slate-800 leading-relaxed">
-            ${qItem.idealPoints.map(pt => `<li>${escapeHtml(pt)}</li>`).join('')}
+            ${(qItem.idealPoints || []).map(pt => `<li>${escapeHtml(pt)}</li>`).join('')}
           </ul>
         </div>
       </div>
@@ -6202,7 +7065,7 @@ function formatReadableSyllabus(rawText) {
               <div>
                 <span class="text-[10px] font-bold text-blue-700">${escapeHtml(g.sourceBank || 'Core Study Guide')}</span>
                 <h4 class="font-bold text-xs text-slate-900 mt-0.5">${escapeHtml(g.name || g.title)}</h4>
-                <p class="text-[11px] text-slate-600 mt-1 line-clamp-2">${escapeHtml(g.idea || '')}</p>
+                <p class="text-[11px] text-slate-600 mt-1 line-clamp-3">${escapeHtml(g.idea || '')}</p>
               </div>
               <button type="button" data-open-study-guide="${escapeHtml(g.name || g.title || qItem.studyGuideQuery)}" class="text-left text-[11px] font-bold text-blue-600 hover:underline pt-1">
                 Open Lesson →
@@ -6221,21 +7084,14 @@ function formatReadableSyllabus(rawText) {
   function bindEvaluationStudyGuideLinks() {
     document.getElementById('iv-speak-model-ans-btn')?.addEventListener('click', () => {
       const iv = state.interviewState;
-      const trackQuestions = AI_INTERVIEW_QUESTION_BANK[iv.track] || AI_INTERVIEW_QUESTION_BANK['Mechanical Design / CAD / GD&T (Creo / NX)'];
+      const trackQuestions = getActiveInterviewQuestions();
       const activeQ = trackQuestions[iv.qIndex];
       if (activeQ) speakInterviewText(activeQ.idealPoints.join('. '));
     });
     container.querySelectorAll('[data-open-study-guide]').forEach(btn => {
       btn.addEventListener('click', () => {
         const qStr = btn.dataset.openStudyGuide || '';
-        stopInterviewSpeech();
-        state.interviewState.activeFullscreen = false;
-        try {
-          if (document.fullscreenElement && document.exitFullscreen) {
-            document.exitFullscreen().catch(() => {});
-          }
-        } catch {}
-        syncExamFullscreenMode(false);
+        exitInterviewFullscreen();
         state.guideFilter.search = qStr.split(' ')[0] || '';
         state.guideFilter.source = 'all';
         switchModule('study-guides');
