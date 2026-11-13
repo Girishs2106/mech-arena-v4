@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0F172A">
+  <title>MechPrep Arena v5.0 — Unified AI Mechanical Engineering Study Guide &amp; Placement Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <!-- Toast Notification Banner -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- Top Header -->
+  <header id="app-topbar" class="sticky top-0 z-30 bg-slate-900 text-white border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <button id="mobile-menu-btn" type="button" class="lg:hidden p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200" aria-label="Toggle Navigation">
+        ☰
+      </button>
+      <div class="flex items-center gap-2.5 cursor-pointer" data-nav="dashboard">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-800 to-blue-600 flex items-center justify-center font-extrabold text-lg shadow-md">M</div>
+        <div>
+          <div class="font-bold tracking-tight text-sm sm:text-base flex items-center gap-2">
+            <span>MechPrep Arena</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900 text-blue-200 border border-blue-700">v5.0 Unified Edition</span>
+          </div>
+          <div class="text-[11px] text-slate-400 hidden sm:block">AI Mechanical Engineering Study Guide · 17 Interactive Schematics · 19 Modules</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap">
+      <span id="ai-provider-pill" class="text-xs px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-medium">
+        ● AI Engine: Ready
+      </span>
+      <button id="top-upload-btn" type="button" data-nav="pdf-library" class="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition">
+        📄 PDF Studio &amp; Drive
+      </button>
+      <button id="top-print-btn" type="button" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition">
+        🖨️ Print / Save PDF
+      </button>
+    </div>
+  </header>
+
+  <div class="flex min-h-[calc(100vh-57px)]">
+    <!-- Left Sidebar Navigation (19 Modules) -->
+    <aside id="app-sidebar" class="w-64 shrink-0 bg-white border-r border-slate-200 p-3 flex flex-col gap-1 fixed lg:static inset-y-0 left-0 z-40 transform -translate-x-full lg:translate-x-0 transition-transform duration-200 overflow-y-auto">
+      <div class="flex items-center justify-between lg:hidden pb-2 mb-2 border-b border-slate-200">
+        <span class="font-bold text-xs uppercase tracking-wider text-slate-500">19 Study Modules</span>
+        <button id="close-sidebar-btn" type="button" class="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100">✕</button>
+      </div>
+
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-2.5 pt-1 pb-1">Core Workspace</div>
+      <button type="button" class="nav-item active text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="dashboard">
+        <span>1. Dashboard</span><span class="text-[10px] opacity-75">⌂</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="pdf-library">
+        <span>2. PDF → QP Studio &amp; Drive</span><span class="text-[10px] opacity-75">📄</span>
+      </button>
+
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-2.5 pt-3 pb-1">Semester Hubs</div>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="sem4">
+        <span>3. Semester 4 Hub</span><span class="text-[10px] opacity-75">S4</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="sem5">
+        <span>4. Semester 5 Hub</span><span class="text-[10px] opacity-75">S5</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="sem6">
+        <span>5. Semester 6 Hub</span><span class="text-[10px] opacity-75">S6</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="subjects">
+        <span>6. Mechanical Subjects</span><span class="text-[10px] opacity-75">⚙</span>
+      </button>
+
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-2.5 pt-3 pb-1">Study &amp; Visual Studio</div>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="study-guides">
+        <span>7. Complete Study Guides</span><span class="text-[10px] opacity-75">📘</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="formula-library">
+        <span>8. Formula Library</span><span class="text-[10px] opacity-75">∑</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="diagrams">
+        <span>9. Engineering Diagrams</span><span class="text-[10px] opacity-75">📐</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="graphs">
+        <span>10. Graph Generator</span><span class="text-[10px] opacity-75">📈</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="numericals">
+        <span>11. Numerical Problems</span><span class="text-[10px] opacity-75">🧮</span>
+      </button>
+
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-2.5 pt-3 pb-1">Practice &amp; Placement</div>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="tech-qbank">
+        <span>12. Technical Question Bank</span><span class="text-[10px] opacity-75">▤</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="aptitude">
+        <span>13. Aptitude Practice</span><span class="text-[10px] opacity-75">％</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="mock-tests">
+        <span>14. Timed Mock Tests</span><span class="text-[10px] opacity-75">⏱</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="placement">
+        <span>15. AI Interview &amp; Job Portals</span><span class="text-[10px] opacity-75">🎙️</span>
+      </button>
+
+      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-2.5 pt-3 pb-1">AI &amp; Analytics</div>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="ai-tutor">
+        <span>16. AI Engineering Tutor</span><span class="text-[10px] opacity-75">🤖</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="flashcards">
+        <span>17. Active Flashcards</span><span class="text-[10px] opacity-75">🗂</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="progress">
+        <span>18. Progress Tracker</span><span class="text-[10px] opacity-75">📊</span>
+      </button>
+      <button type="button" class="nav-item text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-between" data-nav="settings">
+        <span>19. AI Model Settings</span><span class="text-[10px] opacity-75">⚙</span>
+      </button>
+
+      <div class="mt-auto pt-4 px-2">
+        <div class="p-3 rounded-xl bg-slate-900 text-slate-200 text-xs">
+          <div class="font-bold text-white mb-1">Unified Study Engine v5.0</div>
+          <div id="sidebar-stats-summary" class="text-[11px] text-slate-400 leading-relaxed">
+            2,450+ Questions · 144 Guides &amp; Courses · 17 Live Schematics · 5 Drive Libraries
+          </div>
+          <div class="mt-2 pt-2 border-t border-slate-800 text-[10px] text-slate-400">
+            Created by <strong class="text-blue-400">Girish S</strong> &copy; 2026
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Viewport -->
+    <main id="app-main" class="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+      <div id="module-container"></div>
+    </main>
+  </div>
+
+  <!-- Unified Question, Guide, Formula & JSS S&TU Course Dataset -->
+  <script src="data/combined_mechprep_data.js"></script>
+  <!-- Complete 19-Module Application & AI Engine Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

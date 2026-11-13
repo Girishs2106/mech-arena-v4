@@ -1,0 +1,21 @@
+{
+  "name": "mechprep-arena-unified-v5",
+  "version": "5.0.0",
+  "private": true,
+  "description": "Unified AI-Powered Mechanical Engineering Study Guide, 17 Interactive Schematics & Placement Platform — Full-Stack Render Web Service (Gemini, Groq, OpenRouter, Hugging Face, Google Drive OAuth, PDF/OCR, 19 Modules)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "optionalDependencies": {
+    "pg": "^8.12.0"
+  }
+}
