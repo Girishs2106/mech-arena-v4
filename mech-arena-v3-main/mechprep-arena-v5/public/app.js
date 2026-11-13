@@ -261,8 +261,12 @@
       subjectFilter: 'all',
       masteredIds: safeGetStorage('mechprep_v4_fc_mastered', [])
     },
-    // AI Interview Taker & Job Portal state
+    // AI Interview Taker & Job Portal state (Full-Screen Combined Voice + Text)
     interviewState: {
+      activeFullscreen: false,
+      autoSpeak: true,
+      isListening: false,
+      isSpeaking: false,
       track: 'Mechanical Design / CAD / GD&T (Creo / NX)',
       company: 'SJCE Placement Drive (All Core & Tech Recruiters)',
       difficulty: 'Intermediate (GET & 8th-Sem Internship)',
@@ -270,6 +274,7 @@
       answerText: '',
       evaluated: false,
       lastEvaluation: null,
+      coachFeedbackHtml: '',
       history: safeGetStorage('mechprep_v5_interview_history', [])
     },
     portalFilter: {
@@ -2213,31 +2218,39 @@ function formatReadableSyllabus(rawText) {
     const topbar = document.getElementById('app-topbar');
     const sidebar = document.getElementById('app-sidebar');
     const mainEl = document.getElementById('app-main');
+    const extraChrome = document.querySelectorAll('header, aside, footer, #mobile-bottom-nav, .sidebar-backdrop');
     if (isActiveExam) {
       document.body.classList.add('exam-fullscreen-active');
       if (topbar) topbar.style.display = 'none';
       if (sidebar) sidebar.style.display = 'none';
+      extraChrome.forEach(el => { el.style.display = 'none'; });
       if (mainEl) {
         mainEl.style.maxWidth = '100%';
         mainEl.style.width = '100%';
         mainEl.style.minHeight = '100vh';
-        mainEl.style.padding = '1.5rem 2rem';
+        mainEl.style.margin = '0';
+        mainEl.style.padding = '1.25rem 1.5rem';
+        mainEl.style.background = '#0F172A';
       }
     } else {
       document.body.classList.remove('exam-fullscreen-active');
       if (topbar) topbar.style.display = '';
       if (sidebar) sidebar.style.display = '';
+      extraChrome.forEach(el => { el.style.display = ''; });
       if (mainEl) {
         mainEl.style.maxWidth = '';
         mainEl.style.width = '';
         mainEl.style.minHeight = '';
+        mainEl.style.margin = '';
         mainEl.style.padding = '';
+        mainEl.style.background = '';
       }
     }
   }
 
   function switchModule(moduleId) {
-    if (moduleId !== 'mock-tests') {
+    if (moduleId !== 'mock-tests' && moduleId !== 'placement') {
+      if (state.interviewState) state.interviewState.activeFullscreen = false;
       syncExamFullscreenMode(false);
     }
     state.activeModule = moduleId;
@@ -3109,8 +3122,386 @@ function formatReadableSyllabus(rawText) {
     });
   }
 
-  // --- MODULE 7: COMPLETE STUDY GUIDES ---
+  // --- MODULE 7: COMPLETE STUDY GUIDES + THINGS WORKSHOP ANIMATION & LIVE PLOTTER STUDIO ---
+  const THINGS_WORKSHOP_MODELS = [
+    {
+      id: 'inline6-v12',
+      name: '1. Inline-6 & V12 Four-Stroke IC Engine Kinematics',
+      url: 'https://www.things-workshop.com/explore/',
+      topicUrl: 'https://www.things-workshop.com/',
+      category: 'IC Engines & Slider-Crank Dynamics',
+      summary: 'Interactive slider-crank piston, counterweighted crankshaft, twin cams & 24 valves. A 4-stroke cycle takes 720° (2 crank turns); a V12 staggers 12 cylinders so a power stroke begins every 720° ÷ 12 = 60° with zero torque gaps.',
+      formula: 'x(θ) = r·cos(θ) + √(l² − r²·sin²(θ)) ; v(θ) ≈ ω·r·[sin(θ) + (sin(2θ))/(2n)] ; Δθ_fire = 720° / N_cyl',
+      paramLabel: 'Engine Speed / Crank RPM Scale',
+      paramMin: 40,
+      paramMax: 240,
+      paramDefault: 120,
+      plotTitle: 'Piston Displacement x(θ), Velocity v(θ) & Multi-Cylinder Torque vs Crank Angle θ (0°–720°)',
+      guideTrick: [
+        'Primary inertia force F_p = m·ω²·r·cos(θ) at crank speed ω; Secondary inertia force F_s = m·ω²·r·(cos(2θ)/n) at 2ω.',
+        'Inline-6 and 60° V12 engines achieve complete primary and secondary force & moment balance naturally.'
+      ]
+    },
+    {
+      id: 'gears-diff',
+      name: '2. Planetary Gearbox, Conjugate Spur Gears & Open Differential',
+      url: 'https://www.things-workshop.com/topics/mechanics/',
+      topicUrl: 'https://www.things-workshop.com/explore/',
+      category: 'Gear Trains & Power Transmission',
+      summary: 'Follow rotation from an engine through a planetary reduction stage and into an open bevel-gear differential that allows two driven wheels to turn at different speeds while cornering.',
+      formula: 'ω_L + ω_R = 2·ω_carrier ; i_planetary = 1 + (Z_ring / Z_sun) ; T_out = η · i · T_in',
+      paramLabel: 'Ring-to-Sun Tooth Ratio (Z_R / Z_S × 50)',
+      paramMin: 60,
+      paramMax: 250,
+      paramDefault: 150,
+      plotTitle: 'Output Torque Multiplication, Planetary Speed Reduction & Cornering Differential Wheel RPM Split',
+      guideTrick: [
+        'In an open differential, torque is split 50:50 between left and right axles regardless of wheel speed difference: ω_L + ω_R = 2·ω_cage.',
+        'For a planetary actuator with fixed ring gear and sun input: carrier reduction ratio i = 1 + Z_ring / Z_sun.'
+      ]
+    },
+    {
+      id: 'robot-arm',
+      name: '3. 6-Axis Robot Arm & Brushless Planetary Actuator',
+      url: 'https://www.things-workshop.com/topics/mechanics/',
+      topicUrl: 'https://www.things-workshop.com/explore/',
+      category: 'Robotics, Mechatronics & Kinematics',
+      summary: 'A 6-DOF articulated robot arm uses 3 joints (waist, shoulder, elbow) to position the gripper in 3D space (x, y, z) and 3 wrist joints (pitch, yaw, roll) to orient the tool.',
+      formula: 'x = L₁·cos(θ₁) + L₂·cos(θ₁ + θ₂) ; y = L₁·sin(θ₁) + L₂·sin(θ₁ + θ₂) ; τ = J^T · F_ext',
+      paramLabel: 'Payload & Reduction Scale',
+      paramMin: 50,
+      paramMax: 220,
+      paramDefault: 120,
+      plotTitle: 'Joint Holding Torque τ(θ), End-Effector Reach Radius & Actuator Speed-Torque Trade-Off Curve',
+      guideTrick: [
+        '3 axes position the wrist center in (x, y, z), while 3 spherical wrist axes orient the gripper (6 DOF total in spatial Gruebler equation).',
+        'Brushless robotic actuators trade motor speed ω_m for joint torque τ_j via planetary gear reduction.'
+      ]
+    },
+    {
+      id: 'jet-engine',
+      name: '4. Jet Engine Brayton Energy Relay (Compressor → Combustor → Turbine → Nozzle)',
+      url: 'https://www.things-workshop.com/',
+      topicUrl: 'https://www.things-workshop.com/explore/',
+      category: 'Gas Turbines & Jet Propulsion',
+      summary: 'Trace core airflow through multi-stage axial compression, constant-pressure combustion, turbine work extraction (driving the compressor shaft), and high-velocity nozzle expansion.',
+      formula: 'η_Brayton = 1 − 1 / r_p^((γ−1)/γ) ; F_thrust = ṁ_a·[(1 + f)·V_exit − V_flight] + (P_e − P_a)·A_e',
+      paramLabel: 'Compressor Pressure Ratio (r_p × 10)',
+      paramMin: 60,
+      paramMax: 280,
+      paramDefault: 160,
+      plotTitle: 'Brayton Cycle Stage Pressure Ratio, Total Temperature Profile (K) & Thermal Efficiency vs r_p',
+      guideTrick: [
+        'Turbine work equals compressor work plus auxiliary shaft power in a pure turbojet: c_p(T₀₃ − T₀₄) = c_p(T₀₂ − T₀₁).',
+        'Specific thrust peaks at an optimum compressor pressure ratio where turbine inlet temperature T_max is bounded by blade metallurgy.'
+      ]
+    },
+    {
+      id: 'aero-downforce',
+      name: '5. Open-Wheel Vehicle Aerodynamics: Downforce (V²) vs Drag Power (V³)',
+      url: 'https://www.things-workshop.com/explore/',
+      topicUrl: 'https://www.things-workshop.com/',
+      category: 'Fluid Mechanics & External Aerodynamics',
+      summary: 'Inspect an open-wheel race car underbody venturi and wings: aerodynamic downforce and drag force grow with airspeed squared (V²), whereas the engine power required to overcome drag grows with airspeed cubed (V³).',
+      formula: 'F_downforce = ½·ρ·C_L·A·V² ; F_drag = ½·ρ·C_D·A·V² ; P_drag = F_drag · V = ½·ρ·C_D·A·V³',
+      paramLabel: 'Aerodynamic Downforce / Drag Coefficient Scale',
+      paramMin: 60,
+      paramMax: 220,
+      paramDefault: 130,
+      plotTitle: 'Aerodynamic Downforce F_L (∝ V²) vs Power Consumed by Drag P_D (∝ V³) Across Airspeed',
+      guideTrick: [
+        'Doubling vehicle speed V quadruples aerodynamic downforce (4× cornering grip) and drag force (4×), but increases aerodynamic drag power by 2³ = 8×!'
+      ]
+    },
+    {
+      id: 'drill-bit',
+      name: '6. Tricone Roller-Cone vs PDC Diamond-Cutter Drill Bit Mechanics',
+      url: 'https://www.things-workshop.com/explore/drill-bit/',
+      topicUrl: 'https://www.things-workshop.com/explore/',
+      category: 'Manufacturing, Rock Cutting & Tribology',
+      summary: 'Compare a 3-cone rolling tricone bit (crushing/indenting rock with tungsten-carbide inserts) against a 6-blade Polycrystalline Diamond Compact (PDC) fixed-cutter bit (continuous shearing with 15° back-rake).',
+      formula: 'v_cutter(r) = 2·π·r·(N / 60) ; MSE = (WOB / A_bit) + (120·π·N·T) / (A_bit · ROP)',
+      paramLabel: 'Weight on Bit (WOB) & Rotary RPM Scale',
+      paramMin: 50,
+      paramMax: 220,
+      paramDefault: 130,
+      plotTitle: 'Cutter Linear Swept Speed v(r) = 2πrN & Rate of Penetration (PDC Shearing vs Tricone Crushing)',
+      guideTrick: [
+        'Circular travel per revolution is 2πr (zero at the exact center axis r = 0, maximum at outer gauge radius R).',
+        'PDC bits shear ductile/homogeneous formations with higher ROP, whereas Tricone roller cones excel in hard, fractured, abrasive formations.'
+      ]
+    },
+    {
+      id: 'ball-bearing',
+      name: '7. Rolling-Element Ball Bearing & Cage Kinematics',
+      url: 'https://www.things-workshop.com/topics/mechanics/',
+      topicUrl: 'https://www.things-workshop.com/explore/',
+      category: 'Machine Design & Tribology',
+      summary: 'Ball bearings support radial and axial loads with balls rolling between inner and outer raceways while a separator cage prevents ball-to-ball scuffing.',
+      formula: 'L₁₀ = (C / P)³ × 10⁶ rev ; f_cage = (f_inner / 2) · [1 − (d_ball / D_pitch)·cos(α)]',
+      paramLabel: 'Dynamic Capacity Ratio (C / P × 40)',
+      paramMin: 60,
+      paramMax: 240,
+      paramDefault: 140,
+      plotTitle: 'Bearing L₁₀ Fatigue Life (Million Revs) vs Load Ratio (C/P) & Cage Orbital Velocity Profile',
+      guideTrick: [
+        'For ball bearings p = 3: halving the equivalent radial load P increases L₁₀ fatigue life by 2³ = 8 times.',
+        'The cage travels at slightly less than half the inner race speed because the outer race is stationary.'
+      ]
+    },
+    {
+      id: 'wankel-stirling',
+      name: '8. Rotary Wankel Epitrochoid Engine & Regenerative Stirling Cycle',
+      url: 'https://www.things-workshop.com/',
+      topicUrl: 'https://www.things-workshop.com/explore/',
+      category: 'Thermodynamics & Positive-Displacement Engines',
+      summary: 'Follow three moving flank chambers around an orbiting triangular Wankel rotor inside an epitrochoid housing, and compare with a closed regenerative Stirling cycle (2 isotherms + 2 constant-volume regenerations).',
+      formula: 'ω_shaft = 3 · ω_rotor ; η_Stirling(ideal) = 1 − (T_L / T_H) = η_Carnot',
+      paramLabel: 'Compression / Temperature Ratio Scale',
+      paramMin: 60,
+      paramMax: 240,
+      paramDefault: 140,
+      plotTitle: 'Chamber Volume V(θ) & Thermodynamic P–V Indicator Diagram Across Complete Rotor Orbit',
+      guideTrick: [
+        'In a Wankel rotary engine, the eccentric output shaft rotates 3 turns for every 1 full turn of the triangular rotor (ω_shaft = 3·ω_rotor).',
+        'An ideal Stirling cycle with 100% regeneration efficiency achieves the Carnot efficiency η = 1 − T_L/T_H.'
+      ]
+    }
+  ];
+
+  // Inject Things Workshop lessons into state.guides once so they appear in Study Guide search & filters
+  function ensureThingsWorkshopGuidesInjected() {
+    if (state._thingsWorkshopInjected) return;
+    state._thingsWorkshopInjected = true;
+    const twGuides = THINGS_WORKSHOP_MODELS.map(m => ({
+      id: 'tw-' + m.id,
+      guideType: 'things-workshop',
+      sourceBank: 'Things Workshop 3D & Plot',
+      topic: m.category,
+      name: `${m.name} (Things Workshop Interactive)`,
+      title: `${m.name} (Things Workshop Interactive)`,
+      syllabus: `Interactive 3D Mechanism & Analytical Plot (${m.url})`,
+      idea: m.summary,
+      formula: [
+        ['Governing Equation', m.formula],
+        ['Interactive 3D Source', m.url]
+      ],
+      trick: m.guideTrick
+    }));
+    state.guides = twGuides.concat(state.guides);
+  }
+
+  let twAnimFrameId = null;
+  let twActiveChart = null;
+
+  function renderThingsWorkshopAnimatedSvg(modelId, angleDeg, paramVal) {
+    const rad = (angleDeg * Math.PI) / 180;
+    const scale = paramVal / 120;
+
+    if (modelId === 'inline6-v12') {
+      // Animated Slider-Crank + Multi-Cylinder Phase Visualizer
+      const cx = 125, cy = 145, r = 34;
+      const l = 78;
+      const crankX = cx + r * Math.sin(rad);
+      const crankY = cy - r * Math.cos(rad);
+      const pistonY = crankY - Math.sqrt(Math.max(100, l * l - Math.pow(crankX - cx, 2)));
+      const strokePhase = Math.floor(((angleDeg % 720) + 720) % 720 / 180);
+      const strokeNames = ['1. INTAKE STROKE (↓)', '2. COMPRESSION STROKE (↑)', '3. POWER / EXPANSION (↓ 🔥)', '4. EXHAUST STROKE (↑)'];
+      const strokeColors = ['#38BDF8', '#F59E0B', '#EF4444', '#A855F7'];
+      const activeColor = strokeColors[strokePhase] || '#38BDF8';
+
+      return `<svg viewBox="0 0 460 220" class="w-full h-52 bg-slate-950 rounded-xl border border-slate-800">
+        <text x="14" y="22" fill="#93C5FD" font-size="11" font-weight="bold">THINGS WORKSHOP · INLINE-6 &amp; V12 SLIDER-CRANK KINEMATICS (θ = ${Math.round(angleDeg)}°)</text>
+        <!-- Cylinder Bore -->
+        <rect x="92" y="28" width="66" height="82" rx="4" fill="none" stroke="#475569" stroke-width="2.5"/>
+        <!-- Combustion Chamber Glow -->
+        <rect x="95" y="30" width="60" height="${Math.max(6, pistonY - 30)}" fill="${activeColor}" opacity="0.28"/>
+        <!-- Piston Crown & Skirt -->
+        <rect x="95" y="${pistonY.toFixed(1)}" width="60" height="24" rx="4" fill="#E2E8F0" stroke="${activeColor}" stroke-width="2"/>
+        <circle cx="${cx}" cy="${(pistonY + 12).toFixed(1)}" r="4.5" fill="#0F172A"/>
+        <!-- Connecting Rod -->
+        <line x1="${cx}" y1="${(pistonY + 12).toFixed(1)}" x2="${crankX.toFixed(1)}" y2="${crankY.toFixed(1)}" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+        <!-- Crankshaft Web & Counterweight -->
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <line x1="${cx}" y1="${cy}" x2="${crankX.toFixed(1)}" y2="${crankY.toFixed(1)}" stroke="#F59E0B" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="${cx}" cy="${cy}" r="7" fill="#F8FAFC"/>
+        <circle cx="${crankX.toFixed(1)}" cy="${crankY.toFixed(1)}" r="5" fill="#EF4444"/>
+        <!-- 6-Cylinder Firing Order Bar Graph on Right -->
+        <text x="215" y="46" fill="#FCD34D" font-size="11" font-weight="bold">${strokeNames[strokePhase]}</text>
+        ${[0, 1, 2, 3, 4, 5].map(idx => {
+          const cylAng = (angleDeg + idx * 120) * Math.PI / 180;
+          const h = 22 + 16 * Math.cos(cylAng);
+          const bx = 215 + idx * 36;
+          return `<rect x="${bx}" y="${(95 - h).toFixed(1)}" width="24" height="${h.toFixed(1)}" rx="3" fill="${idx % 2 === 0 ? '#3B82F6' : '#10B981'}" opacity="0.85"/>
+                  <text x="${bx + 12}" y="112" text-anchor="middle" fill="#CBD5E1" font-size="9">Cyl ${idx + 1}</text>`;
+        }).join('')}
+        <text x="215" y="138" fill="#E2E8F0" font-size="10.5">Firing Interval: 720°/6 = 120° (I6) · 720°/12 = 60° (V12)</text>
+        <text x="215" y="158" fill="#93C5FD" font-size="10.5">Piston Pos x(θ): ${(pistonY - 30).toFixed(1)} mm · Scale: ${scale.toFixed(2)}×</text>
+        <text x="14" y="206" fill="#6EE7B7" font-size="10.5">x(θ) = r·cos(θ) + √(l² − r²·sin²(θ)) · Primary &amp; Secondary Forces Balanced</text>
+      </svg>`;
+    }
+
+    if (modelId === 'gears-diff') {
+      const sunAng = angleDeg;
+      const planetAng = -angleDeg * 1.8;
+      const orbitAng = rad * 0.35;
+      const px = 140 + 48 * Math.cos(orbitAng);
+      const py = 112 + 48 * Math.sin(orbitAng);
+      return `<svg viewBox="0 0 460 220" class="w-full h-52 bg-slate-950 rounded-xl border border-slate-800">
+        <text x="14" y="22" fill="#93C5FD" font-size="11" font-weight="bold">THINGS WORKSHOP · PLANETARY ACTUATOR &amp; OPEN DIFFERENTIAL (θ = ${Math.round(angleDeg)}°)</text>
+        <!-- Ring Gear -->
+        <circle cx="140" cy="112" r="72" fill="none" stroke="#475569" stroke-width="6" stroke-dasharray="8 4"/>
+        <!-- Sun Gear -->
+        <g transform="translate(140,112) rotate(${sunAng})">
+          <circle r="24" fill="#1E3A8A" stroke="#38BDF8" stroke-width="3" stroke-dasharray="6 3"/>
+          <line x1="-20" y1="0" x2="20" y2="0" stroke="#38BDF8" stroke-width="2"/>
+          <line x1="0" y1="-20" x2="0" y2="20" stroke="#38BDF8" stroke-width="2"/>
+        </g>
+        <!-- Planet Gear -->
+        <g transform="translate(${px.toFixed(1)},${py.toFixed(1)}) rotate(${planetAng})">
+          <circle r="19" fill="#065F46" stroke="#10B981" stroke-width="3" stroke-dasharray="5 3"/>
+          <line x1="-15" y1="0" x2="15" y2="0" stroke="#A7F3D0" stroke-width="2"/>
+        </g>
+        <!-- Carrier Arm -->
+        <line x1="140" y1="112" x2="${px.toFixed(1)}" y2="${py.toFixed(1)}" stroke="#F59E0B" stroke-width="3.5"/>
+        <text x="240" y="62" fill="#FCD34D" font-size="11" font-weight="bold">Reduction Ratio i = 1 + Z_R/Z_S = ${(1 + paramVal / 50).toFixed(2)}:1</text>
+        <text x="240" y="88" fill="#E2E8F0" font-size="11">Output Torque: T_out = ${(paramVal * 0.42).toFixed(1)} N·m</text>
+        <text x="240" y="114" fill="#7DD3FC" font-size="11">Left Wheel ω_L: ${(100 + 18 * Math.sin(rad)).toFixed(1)} RPM</text>
+        <text x="240" y="138" fill="#6EE7B7" font-size="11">Right Wheel ω_R: ${(100 - 18 * Math.sin(rad)).toFixed(1)} RPM</text>
+        <text x="240" y="164" fill="#CBD5E1" font-size="10.5">Differential Identity: ω_L + ω_R = 2·ω_carrier = 200 RPM</text>
+        <text x="14" y="206" fill="#6EE7B7" font-size="10.5">Planetary Speed Trade-off: High Reduction → High Output Torque, Low Angular Velocity</text>
+      </svg>`;
+    }
+
+    if (modelId === 'robot-arm') {
+      const th1 = 0.65 + 0.35 * Math.sin(rad);
+      const th2 = -0.75 + 0.45 * Math.cos(rad);
+      const x0 = 110, y0 = 170;
+      const x1 = x0 + 62 * Math.cos(th1);
+      const y1 = y0 - 62 * Math.sin(th1);
+      const x2 = x1 + 52 * Math.cos(th1 + th2);
+      const y2 = y1 - 52 * Math.sin(th1 + th2);
+      return `<svg viewBox="0 0 460 220" class="w-full h-52 bg-slate-950 rounded-xl border border-slate-800">
+        <text x="14" y="22" fill="#93C5FD" font-size="11" font-weight="bold">THINGS WORKSHOP · 6-AXIS ROBOT ARM &amp; ACTUATOR KINEMATICS</text>
+        <rect x="80" y="170" width="60" height="14" rx="3" fill="#475569"/>
+        <line x1="${x0}" y1="${y0}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke="#3B82F6" stroke-width="8" stroke-linecap="round"/>
+        <line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#10B981" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="${x0}" cy="${y0}" r="7" fill="#F59E0B"/>
+        <circle cx="${x1.toFixed(1)}" cy="${y1.toFixed(1)}" r="6" fill="#F59E0B"/>
+        <circle cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="5" fill="#EF4444"/>
+        <text x="235" y="65" fill="#FCD34D" font-size="11" font-weight="bold">End-Effector Position: (${(x2 - x0).toFixed(1)}, ${(y0 - y2).toFixed(1)}) mm</text>
+        <text x="235" y="92" fill="#E2E8F0" font-size="11">Shoulder Angle θ₁: ${(th1 * 180 / Math.PI).toFixed(1)}°</text>
+        <text x="235" y="116" fill="#7DD3FC" font-size="11">Elbow Angle θ₂: ${(th2 * 180 / Math.PI).toFixed(1)}°</text>
+        <text x="235" y="142" fill="#6EE7B7" font-size="11">3 Position Axes (x,y,z) + 3 Wrist Orientation Axes = 6 DOF</text>
+        <text x="14" y="206" fill="#93C5FD" font-size="10.5">Forward Kinematics: x = L₁cos(θ₁) + L₂cos(θ₁+θ₂) · Jacobian Torque: τ = Jᵀ·F</text>
+      </svg>`;
+    }
+
+    // Default / Aero / Jet / Drill / Bearing / Wankel dynamic engineering visualizer
+    const waveOffset = (angleDeg % 360) / 10;
+    const rp = (paramVal / 10).toFixed(1);
+    const eta = (100 * (1 - 1 / Math.pow(Math.max(2, paramVal / 10), 0.286))).toFixed(1);
+    return `<svg viewBox="0 0 460 220" class="w-full h-52 bg-slate-950 rounded-xl border border-slate-800">
+      <text x="14" y="22" fill="#93C5FD" font-size="11" font-weight="bold">THINGS WORKSHOP · INTERACTIVE 3D MECHANISM &amp; FLOW KINEMATICS (θ = ${Math.round(angleDeg)}°)</text>
+      <!-- Compressor / Rotor / Cutter Rotating Assembly -->
+      <g transform="translate(125,112) rotate(${angleDeg})">
+        <circle r="54" fill="#0F172A" stroke="#38BDF8" stroke-width="2.5"/>
+        <circle r="34" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5 4"/>
+        ${[0, 60, 120, 180, 240, 300].map(a => `
+          <line x1="0" y1="0" x2="${(50 * Math.cos(a * Math.PI / 180)).toFixed(1)}" y2="${(50 * Math.sin(a * Math.PI / 180)).toFixed(1)}" stroke="#38BDF8" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="${(34 * Math.cos((a + 30) * Math.PI / 180)).toFixed(1)}" cy="${(34 * Math.sin((a + 30) * Math.PI / 180)).toFixed(1)}" r="5" fill="#F59E0B"/>
+        `).join('')}
+        <circle r="12" fill="#EF4444"/>
+      </g>
+      <!-- Animated Flow / Energy Streamlines -->
+      <line x1="205" y1="78" x2="430" y2="78" stroke="#38BDF8" stroke-width="2.5" stroke-dasharray="10 6" stroke-dashoffset="${-waveOffset}"/>
+      <line x1="205" y1="112" x2="430" y2="112" stroke="#F59E0B" stroke-width="3" stroke-dasharray="12 6" stroke-dashoffset="${-waveOffset * 1.4}"/>
+      <line x1="205" y1="146" x2="430" y2="146" stroke="#10B981" stroke-width="2.5" stroke-dasharray="10 6" stroke-dashoffset="${-waveOffset}"/>
+      <text x="210" y="62" fill="#FCD34D" font-size="11" font-weight="bold">Live Parameter Ratio: ${rp} · Thermal / Mech Efficiency: ${eta}%</text>
+      <text x="210" y="102" fill="#E2E8F0" font-size="11">Downforce / Torque Scaling (∝ V²): ${(Math.pow(scale, 2) * 100).toFixed(0)}%</text>
+      <text x="210" y="136" fill="#6EE7B7" font-size="11">Drag Power / L₁₀ Cube Law (∝ V³): ${(Math.pow(scale, 3) * 100).toFixed(0)}%</text>
+      <text x="14" y="206" fill="#93C5FD" font-size="10.5">Synced with Things Workshop Interactive 3D Model &amp; Live Chart.js Plotter</text>
+    </svg>`;
+  }
+
+  function updateThingsWorkshopChart(activeModel, paramVal) {
+    const canvas = document.getElementById('tw-live-chart-canvas');
+    if (!canvas || !window.Chart) return;
+    if (twActiveChart) {
+      twActiveChart.destroy();
+      twActiveChart = null;
+    }
+
+    const scale = paramVal / 120;
+    let labels = [];
+    let datasets = [];
+
+    if (activeModel.id === 'inline6-v12') {
+      labels = ['0° (TDC)', '90°', '180° (BDC)', '270°', '360° (TDC)', '450°', '540° (BDC)', '630°', '720°'];
+      const disp = [0, 56, 100, 56, 0, 56, 100, 56, 0].map(v => +(v * scale).toFixed(1));
+      const vel = [0, 100, 0, -100, 0, 100, 0, -100, 0].map(v => +(v * scale).toFixed(1));
+      const v12Torque = [92, 98, 94, 99, 93, 98, 94, 99, 92].map(v => +(v * scale).toFixed(1));
+      datasets = [
+        { label: 'Piston Displacement x(θ) [%]', data: disp, borderColor: '#2563EB', backgroundColor: 'rgba(37,99,235,0.1)', tension: 0.35 },
+        { label: 'Piston Velocity v(θ) [%]', data: vel, borderColor: '#F59E0B', tension: 0.35 },
+        { label: 'V12 Smooth Overlap Torque (60° Firing)', data: v12Torque, borderColor: '#10B981', borderDash: [5, 3], tension: 0.25 }
+      ];
+    } else if (activeModel.id === 'aero-downforce') {
+      labels = ['50 km/h', '100 km/h', '150 km/h', '200 km/h', '250 km/h', '300 km/h'];
+      const vNorm = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+      const downforce = vNorm.map(v => +(45 * v * v * scale).toFixed(1));
+      const dragPower = vNorm.map(v => +(18 * v * v * v * scale).toFixed(1));
+      datasets = [
+        { label: 'Aerodynamic Downforce F_L ∝ V² (N)', data: downforce, borderColor: '#2563EB', backgroundColor: 'rgba(37,99,235,0.12)', fill: true, tension: 0.3 },
+        { label: 'Power Lost to Drag P_D ∝ V³ (kW)', data: dragPower, borderColor: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)', fill: true, tension: 0.3 }
+      ];
+    } else if (activeModel.id === 'gears-diff') {
+      labels = ['1:1', '2:1', '3:1', '4:1', '5:1', '6:1'];
+      const ratios = [1, 2, 3, 4, 5, 6];
+      const torqueOut = ratios.map(r => +(25 * r * scale * 0.96).toFixed(1));
+      const speedOut = ratios.map(r => +(1800 / r).toFixed(0));
+      datasets = [
+        { label: 'Actuator Output Torque T_out (N·m)', data: torqueOut, borderColor: '#10B981', tension: 0.3 },
+        { label: 'Output Shaft Speed ω_out (RPM)', data: speedOut, borderColor: '#2563EB', tension: 0.3 }
+      ];
+    } else if (activeModel.id === 'drill-bit') {
+      labels = ['r=0 (Center)', 'r=20mm', 'r=40mm', 'r=60mm', 'r=80mm', 'r=100mm (Gauge)'];
+      const rVals = [0, 0.02, 0.04, 0.06, 0.08, 0.10];
+      const cutterSpeed = rVals.map(r => +(2 * Math.PI * r * (paramVal / 60)).toFixed(2));
+      const pdcRop = [12, 28, 46, 64, 78, 88].map(v => +(v * scale).toFixed(1));
+      datasets = [
+        { label: 'PDC Shearing ROP Index (m/h)', data: pdcRop, borderColor: '#2563EB', tension: 0.3 },
+        { label: 'Cutter Linear Travel 2πrN (m/s × 10)', data: cutterSpeed.map(v => +(v * 10).toFixed(1)), borderColor: '#F59E0B', tension: 0.3 }
+      ];
+    } else {
+      labels = ['Stage 1', 'Stage 2', 'Stage 3', 'Stage 4', 'Stage 5', 'Stage 6'];
+      const curveA = [20, 48, 82, 115, 90, 55].map(v => +(v * scale).toFixed(1));
+      const curveB = [15, 35, 68, 95, 110, 125].map(v => +(v * scale).toFixed(1));
+      datasets = [
+        { label: `${activeModel.category} Primary Response`, data: curveA, borderColor: '#2563EB', backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.3 },
+        { label: 'Efficiency / Secondary Kinematic Profile', data: curveB, borderColor: '#10B981', tension: 0.3 }
+      ];
+    }
+
+    twActiveChart = new window.Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } },
+        scales: { y: { beginAtZero: false } }
+      }
+    });
+  }
+
   function renderStudyGuides() {
+    ensureThingsWorkshopGuidesInjected();
+    if (twAnimFrameId) {
+      cancelAnimationFrame(twAnimFrameId);
+      twAnimFrameId = null;
+    }
+
     const q = state.guideFilter.search.trim().toLowerCase();
     const src = state.guideFilter.source;
     const filtered = state.guides.filter(g => {
@@ -3119,24 +3510,162 @@ function formatReadableSyllabus(rawText) {
       return true;
     });
 
+    const tw = state.thingsWorkshop || {
+      activeModelId: 'inline6-v12',
+      angleDeg: 120,
+      speedMult: 1.0,
+      paramVal: 120,
+      playing: true,
+      showLiveIframe: false,
+      customUrl: 'https://www.things-workshop.com/explore/'
+    };
+    state.thingsWorkshop = tw;
+    const activeTwModel = THINGS_WORKSHOP_MODELS.find(m => m.id === tw.activeModelId) || THINGS_WORKSHOP_MODELS[0];
+
     container.innerHTML = `
       <div class="space-y-6">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 7 · Complete Study Notes (${state.guides.length} Lessons)</span>
+            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 7 · Complete Study Notes (${state.guides.length} Lessons) + Things Workshop 3D Animations &amp; Live Plots</span>
             <h1 class="text-2xl font-extrabold text-slate-900">Complete Mechanical &amp; Aptitude Study Guides</h1>
           </div>
+          <a href="https://www.things-workshop.com/" target="_blank" rel="noopener noreferrer" class="self-start sm:self-auto px-4 py-2 rounded-xl bg-slate-900 hover:bg-blue-700 text-white font-extrabold text-xs shadow transition flex items-center gap-2">
+            <span>🧊 Open Things Workshop 3D (things-workshop.com)</span>
+            <span>↗</span>
+          </a>
         </div>
 
+        <!-- =================================================================== -->
+        <!-- THINGS WORKSHOP (https://www.things-workshop.com/) ANIMATION IMPORT & LIVE PLOTTER STUDIO -->
+        <!-- =================================================================== -->
+        <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-6 shadow-md space-y-4">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-3 py-0.5 rounded-full bg-blue-600 text-white font-extrabold text-[11px] uppercase tracking-wider">
+                  🧊 Things Workshop Interactive 3D Animation &amp; Plot Importer
+                </span>
+                <a href="https://www.things-workshop.com/explore/" target="_blank" rel="noopener noreferrer" class="text-xs font-mono font-bold text-blue-700 hover:underline">
+                  https://www.things-workshop.com/explore/ ↗
+                </a>
+              </div>
+              <h2 class="text-lg sm:text-xl font-extrabold text-slate-900 mt-1">
+                Interactive Mechanism Animation &amp; Synchronized Engineering Plotter
+              </h2>
+              <p class="text-xs text-slate-600">
+                Select any mechanism from <b>Things Workshop</b> below (or paste/import any URL from <code class="text-blue-700">things-workshop.com</code>) to run the live kinematic animation alongside its real-time mathematical plot.
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              <button type="button" id="tw-toggle-iframe-btn" class="px-3.5 py-2 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 font-extrabold text-xs transition">
+                ${tw.showLiveIframe ? '✕ Hide Embedded Website View' : '🌐 Embed Live things-workshop.com Viewer'}
+              </button>
+              <button type="button" id="tw-import-note-btn" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow transition">
+                ➕ Save Model to Study Notes
+              </button>
+            </div>
+          </div>
+
+          <!-- Mechanism Selector + URL Import Bar -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div class="lg:col-span-2">
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="tw-model-select">Select Things Workshop Interactive 3D Mechanism &amp; Plot</label>
+              <select id="tw-model-select" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold bg-white text-slate-900">
+                ${THINGS_WORKSHOP_MODELS.map(m => `
+                  <option value="${escapeHtml(m.id)}" ${tw.activeModelId === m.id ? 'selected' : ''}>${escapeHtml(m.name)} — [${escapeHtml(m.category)}]</option>
+                `).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="tw-url-input">Import Things Workshop URL</label>
+              <div class="flex gap-1.5">
+                <input id="tw-url-input" type="url" value="${escapeHtml(tw.customUrl || activeTwModel.url)}" placeholder="https://www.things-workshop.com/explore/..." class="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono">
+                <a href="${escapeHtml(activeTwModel.url)}" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-xl bg-slate-900 hover:bg-blue-600 text-white text-xs font-bold flex items-center shrink-0">
+                  3D ↗
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Optional Live Embedded Iframe for https://www.things-workshop.com/ -->
+          ${tw.showLiveIframe ? `
+            <div class="rounded-2xl border-2 border-slate-800 overflow-hidden bg-slate-950 space-y-2 p-3">
+              <div class="flex items-center justify-between text-xs text-slate-300 px-1">
+                <span>🌐 Live Interactive 3D Frame: <b>${escapeHtml(tw.customUrl || activeTwModel.url)}</b></span>
+                <a href="${escapeHtml(tw.customUrl || activeTwModel.url)}" target="_blank" rel="noopener noreferrer" class="text-amber-400 font-bold hover:underline">Open Full Tab ↗</a>
+              </div>
+              <iframe src="${escapeHtml(tw.customUrl || activeTwModel.url)}" title="Things Workshop Interactive 3D" class="w-full h-96 rounded-xl bg-white border border-slate-700" loading="lazy"></iframe>
+            </div>
+          ` : ''}
+
+          <!-- Side-by-Side: Left = Interactive Animated Mechanism SVG + Controls | Right = Live Synchronized Chart.js Plot -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+            <!-- Left: Animated Mechanism & Kinematic Scrub Controls -->
+            <div class="p-4 rounded-2xl bg-slate-900 text-white flex flex-col justify-between space-y-3">
+              <div id="tw-svg-stage">
+                ${renderThingsWorkshopAnimatedSvg(activeTwModel.id, tw.angleDeg, tw.paramVal)}
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-300 mb-1" for="tw-angle-slider">
+                    Crank / Cycle Angle θ: <span id="tw-angle-readout" class="text-amber-400">${Math.round(tw.angleDeg)}°</span>
+                  </label>
+                  <input id="tw-angle-slider" type="range" min="0" max="720" step="2" value="${Math.round(tw.angleDeg)}" class="w-full">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-300 mb-1" for="tw-param-slider">
+                    ${escapeHtml(activeTwModel.paramLabel)}: <span id="tw-param-readout" class="text-emerald-400">${tw.paramVal}</span>
+                  </label>
+                  <input id="tw-param-slider" type="range" min="${activeTwModel.paramMin}" max="${activeTwModel.paramMax}" step="5" value="${tw.paramVal}" class="w-full">
+                </div>
+              </div>
+
+              <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800">
+                <div class="flex items-center gap-2">
+                  <button type="button" id="tw-play-pause-btn" class="px-3.5 py-1.5 rounded-xl ${tw.playing ? 'bg-amber-400 text-slate-950' : 'bg-blue-600 text-white'} font-extrabold text-xs transition">
+                    ${tw.playing ? '⏸ Pause Animation' : '▶ Animate Stroke'}
+                  </button>
+                  <button type="button" id="tw-slowmo-btn" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold">
+                    🐢 Slow-Mo (${tw.speedMult === 0.35 ? '0.35×' : '1.0×'})
+                  </button>
+                </div>
+                <a href="${escapeHtml(activeTwModel.url)}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-blue-300 hover:text-white underline">
+                  Inspect 3D Model on Things Workshop ↗
+                </a>
+              </div>
+            </div>
+
+            <!-- Right: Synchronized Mathematical Plot (Chart.js) + Governing Equations -->
+            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between space-y-3">
+              <div>
+                <span class="text-[10px] font-extrabold uppercase tracking-wider text-blue-700">${escapeHtml(activeTwModel.category)}</span>
+                <h3 class="text-sm font-extrabold text-slate-900 mt-0.5">${escapeHtml(activeTwModel.plotTitle)}</h3>
+              </div>
+
+              <div class="relative h-52 w-full bg-white p-2.5 rounded-xl border border-slate-200">
+                <canvas id="tw-live-chart-canvas"></canvas>
+              </div>
+
+              <div class="space-y-1.5">
+                <div class="formula-box text-xs"><b>Governing Law:</b> ${escapeHtml(activeTwModel.formula)}</div>
+                <p class="text-xs text-slate-700 leading-relaxed">${escapeHtml(activeTwModel.summary)}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Search & Filter Bar -->
         <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="sm:col-span-2">
-            <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="guide-search-input">Search Concepts, Formulas, Derivations or Exam Traps</label>
-            <input id="guide-search-input" type="search" value="${escapeHtml(state.guideFilter.search)}" placeholder="Try Rankine, Mohr, Gruebler, Venturi, EOQ, Alligation..." class="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs">
+            <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="guide-search-input">Search Concepts, Formulas, Derivations or Things Workshop 3D Models</label>
+            <input id="guide-search-input" type="search" value="${escapeHtml(state.guideFilter.search)}" placeholder="Try Inline-6, V12, Differential, Drill Bit, Rankine, Mohr, Gruebler..." class="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs">
           </div>
           <div>
             <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="guide-source-select">Guide Source Bank</label>
             <select id="guide-source-select" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white">
               <option value="all" ${src === 'all' ? 'selected' : ''}>All Study Guide Sources (${state.guides.length})</option>
+              <option value="things-workshop" ${src === 'things-workshop' ? 'selected' : ''}>🧊 Things Workshop 3D &amp; Plot Guides (8)</option>
               <option value="core-guide" ${src === 'core-guide' ? 'selected' : ''}>Core Mechanical Chapters (15)</option>
               <option value="expanded-guide" ${src === 'expanded-guide' ? 'selected' : ''}>Expanded Handout Lessons (71)</option>
               <option value="semester3-guide" ${src === 'semester3-guide' ? 'selected' : ''}>Semester 3 Course Lessons (20)</option>
@@ -3151,7 +3680,7 @@ function formatReadableSyllabus(rawText) {
         <div class="text-xs text-slate-500">Showing <b>${filtered.length}</b> study guide lessons</div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          ${filtered.slice(0, 60).map(g => {
+          ${filtered.slice(0, 68).map(g => {
             if (Array.isArray(g.formula)) {
               return `
                 <article class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3 print-card">
@@ -3164,7 +3693,11 @@ function formatReadableSyllabus(rawText) {
                   <p class="text-xs text-slate-700 leading-relaxed">${escapeHtml(g.idea)}</p>
                   <div class="space-y-1.5">
                     ${g.formula.map(([k, v]) => `
-                      <div class="formula-box text-xs"><b>${escapeHtml(k)}:</b> ${escapeHtml(v)}</div>
+                      <div class="formula-box text-xs"><b>${escapeHtml(k)}:</b> ${
+                        String(v).startsWith('https://')
+                          ? `<a href="${escapeHtml(v)}" target="_blank" rel="noopener noreferrer" class="underline text-blue-700 font-bold">${escapeHtml(v)} ↗</a>`
+                          : escapeHtml(v)
+                      }</div>
                     `).join('')}
                   </div>
                   ${Array.isArray(g.trick) && g.trick.length ? `
@@ -3213,16 +3746,96 @@ function formatReadableSyllabus(rawText) {
       </div>
       <div class="flex flex-wrap gap-2">
         <button type="button" data-inline-tutor="Solve a Mohr circle problem with σ_x = 1200 MPa, σ_y = 600 MPa, τ_xy = 400 MPa step by step." class="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 text-slate-700 font-medium">🔩 Mohr Circle (1200 &amp; 600 MPa)</button>
-        <button type="button" data-inline-tutor="Explain why doubling both mean coil diameter D and wire diameter d halves the deflection of a close-coiled helical spring." class="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 text-slate-700 font-medium">🌀 Helical Spring Scaling</button>
+        <button type="button" data-inline-tutor="Explain why an Inline-6 and 60-degree V12 engine have primary and secondary balance with a power stroke every 60 degrees." class="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 text-slate-700 font-medium">🧊 Things Workshop V12 &amp; Inline-6</button>
         <button type="button" data-inline-tutor="Derive Gruebler planar mobility F = 3(L-1) - 2j - h and Grashof criterion s + l <= p + q." class="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 text-slate-700 font-medium">⚙ KOM Gruebler &amp; Grashof</button>
       </div>
       <div class="flex gap-2">
-        <input id="inline-guide-tutor-input" type="text" placeholder="Ask a question about any formula or derivation above..." class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs">
+        <input id="inline-guide-tutor-input" type="text" placeholder="Ask a question about any formula, Things Workshop mechanism, or derivation above..." class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs">
         <button type="button" id="inline-guide-tutor-btn" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs">Ask Engineering LLM →</button>
       </div>
       <div id="inline-guide-tutor-out" class="hidden p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3"></div>
     `;
     container.firstElementChild?.appendChild(llmFooter);
+
+    // Bind Things Workshop Interactive Controls & Plotter
+    updateThingsWorkshopChart(activeTwModel, tw.paramVal);
+
+    const startTwLoop = () => {
+      if (twAnimFrameId) cancelAnimationFrame(twAnimFrameId);
+      const step = () => {
+        if (state.activeModule !== 'study-guides' || !state.thingsWorkshop?.playing) return;
+        tw.angleDeg = (tw.angleDeg + 1.8 * (tw.speedMult || 1)) % 720;
+        const stage = document.getElementById('tw-svg-stage');
+        const angSlider = document.getElementById('tw-angle-slider');
+        const angReadout = document.getElementById('tw-angle-readout');
+        if (stage) stage.innerHTML = renderThingsWorkshopAnimatedSvg(activeTwModel.id, tw.angleDeg, tw.paramVal);
+        if (angSlider) angSlider.value = String(Math.round(tw.angleDeg));
+        if (angReadout) angReadout.textContent = `${Math.round(tw.angleDeg)}°`;
+        twAnimFrameId = requestAnimationFrame(step);
+      };
+      if (tw.playing) twAnimFrameId = requestAnimationFrame(step);
+    };
+    startTwLoop();
+
+    document.getElementById('tw-model-select')?.addEventListener('change', (e) => {
+      tw.activeModelId = e.target.value;
+      const chosen = THINGS_WORKSHOP_MODELS.find(m => m.id === tw.activeModelId) || THINGS_WORKSHOP_MODELS[0];
+      tw.paramVal = chosen.paramDefault;
+      tw.customUrl = chosen.url;
+      renderStudyGuides();
+    });
+    document.getElementById('tw-url-input')?.addEventListener('change', (e) => {
+      tw.customUrl = e.target.value.trim() || 'https://www.things-workshop.com/explore/';
+    });
+    document.getElementById('tw-toggle-iframe-btn')?.addEventListener('click', () => {
+      tw.showLiveIframe = !tw.showLiveIframe;
+      renderStudyGuides();
+    });
+    document.getElementById('tw-import-note-btn')?.addEventListener('click', () => {
+      const customU = document.getElementById('tw-url-input')?.value?.trim() || activeTwModel.url;
+      const newGuide = {
+        id: 'tw-custom-' + Date.now(),
+        guideType: 'things-workshop',
+        sourceBank: 'Things Workshop Imported 3D',
+        topic: activeTwModel.category,
+        name: `${activeTwModel.name} — Imported Plot & Study Card`,
+        title: `${activeTwModel.name} — Imported Plot & Study Card`,
+        syllabus: `Imported from ${customU}`,
+        idea: activeTwModel.summary,
+        formula: [
+          ['Governing Equation', activeTwModel.formula],
+          ['Things Workshop URL', customU]
+        ],
+        trick: activeTwModel.guideTrick
+      };
+      state.guides.unshift(newGuide);
+      showToast(`Imported "${activeTwModel.name}" into your Study Guides!`, 'success');
+      renderStudyGuides();
+    });
+    document.getElementById('tw-angle-slider')?.addEventListener('input', (e) => {
+      tw.playing = false;
+      tw.angleDeg = Number(e.target.value || 0);
+      const stage = document.getElementById('tw-svg-stage');
+      const angReadout = document.getElementById('tw-angle-readout');
+      if (stage) stage.innerHTML = renderThingsWorkshopAnimatedSvg(activeTwModel.id, tw.angleDeg, tw.paramVal);
+      if (angReadout) angReadout.textContent = `${Math.round(tw.angleDeg)}°`;
+    });
+    document.getElementById('tw-param-slider')?.addEventListener('input', (e) => {
+      tw.paramVal = Number(e.target.value || 120);
+      const pReadout = document.getElementById('tw-param-readout');
+      const stage = document.getElementById('tw-svg-stage');
+      if (pReadout) pReadout.textContent = String(tw.paramVal);
+      if (stage) stage.innerHTML = renderThingsWorkshopAnimatedSvg(activeTwModel.id, tw.angleDeg, tw.paramVal);
+      updateThingsWorkshopChart(activeTwModel, tw.paramVal);
+    });
+    document.getElementById('tw-play-pause-btn')?.addEventListener('click', () => {
+      tw.playing = !tw.playing;
+      renderStudyGuides();
+    });
+    document.getElementById('tw-slowmo-btn')?.addEventListener('click', () => {
+      tw.speedMult = tw.speedMult === 0.35 ? 1.0 : 0.35;
+      renderStudyGuides();
+    });
 
     bindTextbookDiagramEvents(renderStudyGuides);
 
@@ -4262,227 +4875,479 @@ function formatReadableSyllabus(rawText) {
 
   // --- MODULE 15: PLACEMENT PREPARATION ---
   // --------------------------------------------------------------------------
-  // PLACEMENT PORTALS & AI INTERVIEW TAKER DATA (SJCE + CORE OEM + PLATFORMS)
+  // PLACEMENT PORTALS & FULL-SCREEN COMBINED VOICE + TEXT AI INTERVIEW TAKER
+  // (1. SJCE College First -> 2. NATS, Prosple & General Portals -> 3. Prep Apps -> 4. Core OEMs)
   // --------------------------------------------------------------------------
   const OFFICIAL_JOB_PORTALS = [
+    // =========================================================================
+    // 1. FIRST: OFFICIAL COLLEGE PLACEMENT PORTAL (SJCE MYSURU)
+    // =========================================================================
     {
       id: 'sjce-clg',
       name: 'JSS STU (SJCE) Unified Placement Portal',
-      shortCode: 'SJCE',
+      shortCode: 'S',
       url: 'https://sjceplacements.org/',
       loginUrl: 'https://sjceplacements.org/login',
       recruitersUrl: 'https://sjceplacements.org/past-recruiters',
-      category: 'College Portal',
-      location: 'Mysuru · JSSATE Bengaluru · Noida',
-      roles: 'Campus Drives, GET, 8th-Sem Internships & Dream Core Offers',
-      color: 'from-blue-900 to-indigo-700',
-      badge: 'OFFICIAL COLLEGE PORTAL',
+      category: '1. College Portal',
+      location: 'SJCE Mysuru · JSSATE Bengaluru · Noida',
+      roles: 'Official Campus Drives, GET, 8th-Sem Internships & Dream Core Offers',
+      badge: '1ST · OFFICIAL COLLEGE PORTAL',
       featured: true,
-      logoSvg: `<svg viewBox="0 0 64 64" class="w-12 h-12 rounded-xl shadow-md shrink-0"><rect width="64" height="64" rx="14" fill="#1E3A8A"/><path d="M32 10L8 22l24 12 20-10v15h4V22L32 10zm0 28L16 30v11c0 6 7 11 16 11s16-5 16-11V30l-16 8z" fill="#FBBF24"/><text x="32" y="59" text-anchor="middle" fill="#FFFFFF" font-size="9" font-weight="bold" font-family="Inter,sans-serif">JSS · SJCE</text></svg>`
+      logoSvg: `<svg viewBox="0 0 64 64" class="w-12 h-12 rounded-2xl shadow-md shrink-0"><rect width="64" height="64" rx="16" fill="#1E293B"/><rect x="10" y="10" width="44" height="44" rx="10" fill="#475569"/><text x="32" y="41" text-anchor="middle" fill="#FFFFFF" font-size="26" font-weight="900" font-family="Inter,sans-serif">S</text><circle cx="50" cy="50" r="9" fill="#1E3A8A" stroke="#FBBF24" stroke-width="2"/><text x="50" y="53" text-anchor="middle" fill="#FBBF24" font-size="7" font-weight="900">JSS</text></svg>`
     },
+
+    // =========================================================================
+    // 2. SECOND (UPSIDE): PROSPLE, NATS & ALL REQUESTED GENERAL JOB PORTALS
+    // (Prosple, NATS, Naukri, Unstop, Internshala, Upwork, Indeed, LinkedIn, Glassdoor, eJobs, Fairygodboss, Our Ability, Professional Diversity Network, RecruitMilitary, SEEK, XING)
+    // =========================================================================
     {
-      id: 'superset',
-      name: 'Superset Campus Placement Portal',
-      shortCode: 'SS',
-      url: 'https://joinsuperset.com/student',
-      category: 'Campus & Govt',
-      location: 'Pan-India University Drives',
-      roles: 'Cognizant, Capgemini, Wipro, Core GET & University Drives',
-      color: 'from-indigo-700 to-blue-600',
-      badge: 'Official Campus CRM',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#4338CA"/><path d="M16 18h16v4H16zm0 8h12v4H16z" fill="#fff"/><circle cx="34" cy="30" r="5" fill="#38BDF8"/></svg>`
+      id: 'prosple',
+      name: 'Prosple India (Graduates & Internships)',
+      shortCode: 'P.',
+      url: 'https://in.prosple.com/',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Bengaluru · Mysuru · Pan-India Graduate Programs',
+      roles: 'Verified Graduate Engineer Trainee (GET) & Semester Internships (L&T, Tata, ABB)',
+      badge: 'PROSPLE GRADUATE HUB',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0F172A"/><rect x="8" y="8" width="40" height="40" rx="8" fill="#FFFFFF"/><text x="24" y="38" text-anchor="middle" fill="#0F172A" font-size="28" font-weight="900" font-family="Inter,sans-serif">P</text><rect x="34" y="31" width="6" height="6" fill="#2563EB"/></svg>`
     },
     {
       id: 'nats',
       name: 'NATS 2.0 National Apprenticeship Portal',
       shortCode: 'NATS',
       url: 'https://nats.education.gov.in/',
-      category: 'Campus & Govt',
+      category: '2. NATS, Prosple & General Portals',
       location: 'Ministry of Education, Govt. of India',
-      roles: 'Graduate Engineering Apprenticeships (PSU, ISRO, DRDO, HAL, BEL)',
-      color: 'from-emerald-800 to-teal-700',
-      badge: 'Govt. of India Portal',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#065F46"/><text x="24" y="29" text-anchor="middle" fill="#A7F3D0" font-size="12" font-weight="800" font-family="Inter,sans-serif">NATS</text></svg>`
+      roles: 'Graduate Engineering Apprenticeships (ISRO, DRDO, HAL, BEL, BEML, PSUs)',
+      badge: 'GOVT. OF INDIA NATS 2.0',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#065F46"/><text x="28" y="33" text-anchor="middle" fill="#A7F3D0" font-size="14" font-weight="900" font-family="Inter,sans-serif">NATS</text></svg>`
     },
+    {
+      id: 'naukri',
+      name: 'Naukri.com (Engineering & Campus Hub)',
+      shortCode: 'N',
+      url: 'https://www.naukri.com/campus-hiring-jobs-in-bengaluru',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Bengaluru · Mysuru · Chennai · Pune',
+      roles: 'India #1 Job Board for Core Design, CAE, Production, Boiler & Quality',
+      badge: 'INDIA #1 JOB PORTAL',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#2563EB"/><circle cx="28" cy="16" r="3.5" fill="#FFFFFF"/><path d="M22 24l10-4-6 10 8 10-10-4z" fill="#FFFFFF"/></svg>`
+    },
+    {
+      id: 'unstop',
+      name: 'Unstop (Hiring Challenges & Competitions)',
+      shortCode: 'unstop',
+      url: 'https://unstop.com/job-portal',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Pan-India Case Challenges & Engineering Hackathons',
+      roles: 'TATA Imagination, L&T OutThink, Hero Campus Challenge & Off-Campus Drives',
+      badge: 'HIRING CHALLENGES',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#1E3A8A"/><circle cx="20" cy="28" r="8" fill="#FFFFFF"/><text x="20" y="31" text-anchor="middle" fill="#1E3A8A" font-size="9" font-weight="900">un</text><text x="37" y="31" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800">stop</text></svg>`
+    },
+    {
+      id: 'internshala',
+      name: 'Internshala (Internships & Fresher Roles)',
+      shortCode: 'IS',
+      url: 'https://internshala.com/internships/',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Bengaluru · Mysuru · Remote · Pan-India',
+      roles: '6-Month Industrial Internships, CAD/SolidWorks/Creo/ANSYS & PPOs',
+      badge: 'INTERNSHIPS & PPOs',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0284C7"/><text x="28" y="36" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="900" font-family="Inter,sans-serif">IS</text></svg>`
+    },
+    {
+      id: 'upwork',
+      name: 'Upwork (Freelance CAD, 3D & FEA)',
+      shortCode: 'up',
+      url: 'https://www.upwork.com/promos/general',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Remote Global Engineering Projects',
+      roles: 'Freelance PTC Creo, Siemens NX, SolidWorks, ANSYS FEA & Product CAD',
+      badge: 'REMOTE CAD/FEA PROJECTS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/><text x="28" y="35" text-anchor="middle" fill="#14A800" font-size="22" font-weight="900" font-family="Inter,sans-serif">up</text></svg>`
+    },
+    {
+      id: 'indeed',
+      name: 'Indeed (India & Global Job Search)',
+      shortCode: 'i',
+      url: 'https://in.indeed.com/',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Mysuru · Bengaluru · All India & Global',
+      roles: 'Direct Employer Job Postings for Mechanical Engineer, CAD Designer & GET',
+      badge: 'GLOBAL JOB SEARCH',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/><path d="M22 22c3-4 9-4 12 0" fill="none" stroke="#003A9B" stroke-width="3.5" stroke-linecap="round"/><circle cx="28" cy="24" r="3" fill="#003A9B"/><rect x="25.5" y="29" width="5" height="14" rx="2.5" fill="#003A9B"/></svg>`
+    },
+    {
+      id: 'linkedin',
+      name: 'LinkedIn Jobs (Mechanical & R&D Network)',
+      shortCode: 'in',
+      url: 'https://opportunity.linkedin.com/jobs',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Mysuru · Bengaluru · Global',
+      roles: 'Direct Recruiter Outreach, GET, CAD/CAE & R&D Internships',
+      badge: 'PROFESSIONAL NETWORK',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0A66C2"/><text x="28" y="38" text-anchor="middle" fill="#FFFFFF" font-size="28" font-weight="900" font-family="Inter,sans-serif">in</text></svg>`
+    },
+    {
+      id: 'glassdoor',
+      name: 'Glassdoor (Jobs, Salaries & Interview Reviews)',
+      shortCode: 'GD',
+      url: 'https://www.glassdoor.com/Job/index.htm',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Bengaluru · Mysuru · Global Employer Reviews',
+      roles: 'Company-Specific Interview Questions, GET Salary Benchmarks & Job Postings',
+      badge: 'SALARIES & REVIEWS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0CAA41"/><text x="28" y="36" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="900" font-family="Inter,sans-serif">G</text></svg>`
+    },
+    {
+      id: 'ejobs',
+      name: 'eJobs (European & Global Engineering Jobs)',
+      shortCode: 'eJ',
+      url: 'https://www.ejobs.ro/',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Europe · Remote · International Engineering',
+      roles: 'Automotive, Manufacturing, Mechanical Design & International Engineering Careers',
+      badge: 'EJOBS PORTAL',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#E11D48"/><text x="28" y="35" text-anchor="middle" fill="#FFFFFF" font-size="18" font-weight="900" font-family="Inter,sans-serif">eJobs</text></svg>`
+    },
+    {
+      id: 'fairygodboss',
+      name: 'Fairygodboss (Inclusive Career Community & Jobs)',
+      shortCode: 'FGB',
+      url: 'https://fairygodboss.com/jobs/find',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Global & Multinational Engineering Employers',
+      roles: 'Global STEM & Engineering Roles at Schneider Electric, GE, Honeywell & Fortune 500s',
+      badge: 'CAREER COMMUNITY',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#7C3AED"/><text x="28" y="34" text-anchor="middle" fill="#FFFFFF" font-size="15" font-weight="900" font-family="Inter,sans-serif">FGB</text></svg>`
+    },
+    {
+      id: 'our-ability',
+      name: 'Our Ability (AI-Powered Inclusive Employment)',
+      shortCode: 'OA',
+      url: 'https://www.ourability.com/',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Global Inclusive Employer Network',
+      roles: 'AI-Assisted Profile Matching & Accessible Engineering Career Opportunities',
+      badge: 'AI INCLUSIVE JOBS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0369A1"/><text x="28" y="35" text-anchor="middle" fill="#FFFFFF" font-size="18" font-weight="900" font-family="Inter,sans-serif">OA</text></svg>`
+    },
+    {
+      id: 'pdn',
+      name: 'Professional Diversity Network (PDN)',
+      shortCode: 'PDN',
+      url: 'https://www.prodivnet.com/',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Global Diversity Career Fairs & Job Network',
+      roles: 'Engineering, Aerospace, Defence & Corporate Diversity Recruitment',
+      badge: 'DIVERSITY NETWORK',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#1E293B"/><text x="28" y="34" text-anchor="middle" fill="#38BDF8" font-size="15" font-weight="900" font-family="Inter,sans-serif">PDN</text></svg>`
+    },
+    {
+      id: 'recruit-military',
+      name: 'RecruitMilitary (Technical & Leadership Careers)',
+      shortCode: 'RM',
+      url: 'https://recruitmilitary.com/job-seekers/',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Global Defence, Aerospace & Operations Employers',
+      roles: 'Mechanical Maintenance, Fleet Operations, Aerospace & Field Engineering',
+      badge: 'DEFENCE & TECH CAREERS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#14532D"/><text x="28" y="35" text-anchor="middle" fill="#FDE047" font-size="16" font-weight="900" font-family="Inter,sans-serif">RM</text></svg>`
+    },
+    {
+      id: 'seek',
+      name: 'SEEK (Asia-Pacific & Australia Engineering Jobs)',
+      shortCode: 'SEEK',
+      url: 'https://au.seek.com/jobs',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Australia · New Zealand · APAC (Visa Sponsorship)',
+      roles: 'Mechanical, Mining, Reliability, HVAC & Manufacturing Engineers',
+      badge: 'APAC #1 JOB BOARD',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#E11D48"/><text x="28" y="33" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="900" font-family="Inter,sans-serif">SEEK</text></svg>`
+    },
+    {
+      id: 'xing',
+      name: 'XING (German & European Engineering Network)',
+      shortCode: 'XING',
+      url: 'https://www.xing.com/en',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Germany (DACH) · Europe Automotive & Machinery',
+      roles: 'German Automotive OEMs, Bosch/Siemens/Airbus Europe & Mechanical R&D',
+      badge: 'GERMANY & EUROPE JOBS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#006567"/><text x="28" y="33" text-anchor="middle" fill="#CDDC39" font-size="13" font-weight="900" font-family="Inter,sans-serif">XING</text></svg>`
+    },
+    {
+      id: 'superset',
+      name: 'Superset Campus Placement Platform',
+      shortCode: 'SS',
+      url: 'https://joinsuperset.com/student',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Pan-India University Recruitment',
+      roles: 'Official University Placement Portal for Capgemini, Cognizant, Wipro & Core Drives',
+      badge: 'UNIVERSITY PLACEMENT CRM',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#4338CA"/><path d="M16 20h24v4H16zm0 8h16v4H16z" fill="#fff"/><circle cx="38" cy="34" r="5" fill="#38BDF8"/></svg>`
+    },
+
+    // =========================================================================
+    // 3. THIRD: MORE APTITUDE PORTALS (INDIABIX, PREPINSTA, PRACTICA + 7 MORE)
+    // =========================================================================
+    {
+      id: 'indiabix',
+      name: 'IndiaBIX (Quantitative, Logical, Verbal & Mechanical)',
+      shortCode: 'BIX',
+      url: 'https://www.indiabix.com/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Free Topic-Wise Aptitude & Mechanical MCQs',
+      roles: 'Quants, Logical Reasoning, Verbal, Non-Verbal, DI & Mechanical Core Questions',
+      badge: '#1 FREE APTITUDE BANK',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#14532D"/><path d="M14 28c0-9 28-9 28 0H14z" fill="#4ADE80"/><path d="M28 28v11c0 3-4 3-4 0" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/></svg>`
+    },
+    {
+      id: 'prepinsta',
+      name: 'PrepInsta (Company Placement Papers & Shortcuts)',
+      shortCode: 'P',
+      url: 'https://prepinsta.com/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'All-India Company-Specific Aptitude Prep',
+      roles: 'TCS NQT, Infosys, Bosch, L&T, Cognizant, AMCAT, CoCubes & AON Papers',
+      badge: 'COMPANY PLACEMENT PAPERS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#334155"/><text x="28" y="36" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="900" font-family="Inter,sans-serif">P</text></svg>`
+    },
+    {
+      id: 'practica',
+      name: 'Practica & Online Timed Aptitude Test Drills',
+      shortCode: '✓',
+      url: 'https://www.indiabix.com/online-test/categories/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Interactive Timed Tests & Viva Drills',
+      roles: 'Timed 30-Min Aptitude Mock Tests, Spoken English & Technical Viva Practice',
+      badge: 'PRACTICA TIMED DRILLS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0D9488"/><circle cx="28" cy="28" r="14" fill="#FFFFFF"/><path d="M22 28l4 4 9-9" fill="none" stroke="#0D9488" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    },
+    {
+      id: 'gfg-aptitude',
+      name: 'GeeksforGeeks Aptitude & Placement Archive',
+      shortCode: 'GfG',
+      url: 'https://www.geeksforgeeks.org/aptitude/aptitude-questions-and-answers/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Quantitative, Puzzles, Logical & Company PYQs',
+      roles: 'Topic-Wise Formula Shortcuts, Seating Arrangements, Puzzles & Coding/Aptitude Sets',
+      badge: 'GFG APTITUDE & PUZZLES',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#15803D"/><text x="28" y="34" text-anchor="middle" fill="#FFFFFF" font-size="15" font-weight="900" font-family="Inter,sans-serif">GfG</text></svg>`
+    },
+    {
+      id: 'testbook-aptitude',
+      name: 'Testbook Campus Placement Aptitude Test Series',
+      shortCode: 'TB',
+      url: 'https://testbook.com/placement-aptitude/test-series',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: '97+ Structured Mock Tests (Quants, LR, Verbal, GATE/PSU)',
+      roles: '52 Quantitative Tests, 26 Logical Reasoning Tests, 19 Verbal Tests & TCS NQT Mocks',
+      badge: '97+ PLACEMENT MOCKS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0284C7"/><text x="28" y="35" text-anchor="middle" fill="#FFFFFF" font-size="17" font-weight="900" font-family="Inter,sans-serif">TB</text></svg>`
+    },
+    {
+      id: 'hitbullseye',
+      name: 'Hitbullseye CPT (Formula Sheets & Speed Tricks)',
+      shortCode: 'HB',
+      url: 'https://cpt.hitbullseye.com/Aptitude-Questions.php',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Campus Placement Training (CPT) Portal',
+      roles: 'High-Speed Vedic Math, Alligation, Cryptarithmetic, Clocks, Calendars & DI',
+      badge: 'SPEED MATH & FORMULAS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#B91C1C"/><circle cx="28" cy="28" r="14" fill="none" stroke="#FDE047" stroke-width="3"/><circle cx="28" cy="28" r="5" fill="#FFFFFF"/></svg>`
+    },
+    {
+      id: 'freshersworld-apt',
+      name: 'Freshersworld Placement Papers & Aptitude Hub',
+      shortCode: 'FW',
+      url: 'https://placement.freshersworld.com/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Core Technical & IT Company Placement Papers',
+      roles: 'Previous Year Placement Papers for L&T, Bosch, HAL, BEL, DRDO, TCS, Wipro & Infosys',
+      badge: 'PREVIOUS YEAR PAPERS',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#4F46E5"/><text x="28" y="35" text-anchor="middle" fill="#FFFFFF" font-size="16" font-weight="900" font-family="Inter,sans-serif">FW</text></svg>`
+    },
+    {
+      id: 'ambitionbox-apt',
+      name: 'AmbitionBox Assessment & Interview Experiences',
+      shortCode: 'AB',
+      url: 'https://blog.ambitionbox.com/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Candidate-Shared Online Assessment & Viva Logs',
+      roles: 'Real Candidate Interview Questions & Aptitude Test Breakdowns for Core Companies',
+      badge: 'INTERVIEW EXPERIENCES',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#EA580C"/><text x="28" y="35" text-anchor="middle" fill="#FFFFFF" font-size="16" font-weight="900" font-family="Inter,sans-serif">AB</text></svg>`
+    },
+    {
+      id: 'letscode-roadmap',
+      name: 'Let’s Code Placement Aptitude Roadmap & Mock Tests',
+      shortCode: 'LC',
+      url: 'https://lets-code.co.in/articles/aptituderoadmap/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Complete 10-Week Aptitude Syllabus & Free MCQs',
+      roles: 'Structured Quants, DI, Verbal & Logical Reasoning Roadmap with Free Mock Tests',
+      badge: 'APTITUDE ROADMAP',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0F172A"/><text x="28" y="35" text-anchor="middle" fill="#38BDF8" font-size="16" font-weight="900" font-family="Inter,sans-serif">LC</text></svg>`
+    },
+    {
+      id: 'yoodli',
+      name: 'Yoodli AI Speech & Interview Roleplay Coach',
+      shortCode: 'Y',
+      url: 'https://app.yoodli.ai/practice/speech',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'AI Voice & Communication Analytics',
+      roles: 'Real-Time Speech Pacing, Filler-Word Elimination & HR/Technical Interview Roleplay',
+      badge: 'AI SPEECH COACH',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/><path d="M18 34c4-14 8-14 10 0s6 14 10-8" fill="none" stroke="#4F46E5" stroke-width="4" stroke-linecap="round"/></svg>`
+    },
+
+    // =========================================================================
+    // 4. FOURTH: CORE MECHANICAL OEM & CAMPUS RECRUITERS
+    // =========================================================================
     {
       id: 'ltts',
       name: 'L&T Technology Services (LTTS)',
       shortCode: 'LTTS',
       url: 'https://www.ltts.com/careers/india',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Mysuru SEZ (Hebbal) · Bengaluru · Vadodara',
       roles: 'Mechanical CAD/CAE, Product Design, Thermal & ER&D GET',
-      color: 'from-blue-800 to-sky-600',
-      badge: 'Mysuru & Bengaluru Hub',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#0369A1"/><text x="24" y="29" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="800" font-family="Inter,sans-serif">LTTS</text></svg>`
+      badge: 'MYSURU & BENGALURU HUB',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0369A1"/><text x="28" y="33" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="900" font-family="Inter,sans-serif">LTTS</text></svg>`
     },
     {
       id: 'lnt',
       name: 'Larsen & Toubro (L&T Core Engineering)',
       shortCode: 'L&T',
       url: 'https://www.larsentoubro.com/corporate/careers/',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Mumbai · Bengaluru · Chennai · Hazira',
       roles: 'Graduate Engineer Trainee (GET), Heavy Engg, Defence & Valves',
-      color: 'from-slate-800 to-blue-800',
-      badge: 'Core GET Recruiter',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#1E293B"/><circle cx="24" cy="24" r="16" fill="none" stroke="#38BDF8" stroke-width="2.5"/><text x="24" y="28" text-anchor="middle" fill="#FFFFFF" font-size="11" font-weight="800" font-family="Inter,sans-serif">L&amp;T</text></svg>`
-    },
-    {
-      id: 'honeywell',
-      name: 'Honeywell Aerospace & Automation',
-      shortCode: 'HON',
-      url: 'https://careers.honeywell.com/en/sites/Honeywell/jobs',
-      category: 'Core Mechanical OEM',
-      location: 'Bengaluru · Pune · Hyderabad',
-      roles: 'Aerospace Mechanical Design, Propulsion, Thermal & CAE',
-      color: 'from-rose-700 to-red-600',
-      badge: 'Aerospace & Thermal',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#BE123C"/><text x="24" y="30" text-anchor="middle" fill="#FFFFFF" font-size="16" font-weight="900" font-family="Inter,sans-serif">H</text></svg>`
+      badge: 'CORE GET RECRUITER',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#1E293B"/><circle cx="28" cy="28" r="18" fill="none" stroke="#38BDF8" stroke-width="2.5"/><text x="28" y="33" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="900" font-family="Inter,sans-serif">L&amp;T</text></svg>`
     },
     {
       id: 'bosch',
       name: 'Bosch India (Mobility & R&D)',
       shortCode: 'BOSCH',
       url: 'https://www.bosch.in/careers/',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Bengaluru (Adugodi / Koramangala) · Coimbatore',
       roles: 'Powertrain, Mechatronics, Hydraulics, Manufacturing & GET',
-      color: 'from-red-700 to-slate-800',
-      badge: 'Automotive & R&D',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#B91C1C"/><circle cx="24" cy="24" r="12" fill="none" stroke="#fff" stroke-width="2.5"/><path d="M18 18v12M30 18v12M18 24h12" stroke="#fff" stroke-width="2.5"/></svg>`
+      badge: 'AUTOMOTIVE & R&D',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#B91C1C"/><circle cx="28" cy="28" r="14" fill="none" stroke="#fff" stroke-width="2.5"/><path d="M21 20v16M35 20v16M21 28h14" stroke="#fff" stroke-width="2.5"/></svg>`
+    },
+    {
+      id: 'honeywell',
+      name: 'Honeywell Aerospace & Automation',
+      shortCode: 'HON',
+      url: 'https://careers.honeywell.com/en/sites/Honeywell/jobs',
+      category: '4. Core Mechanical & OEM Portals',
+      location: 'Bengaluru · Pune · Hyderabad',
+      roles: 'Aerospace Mechanical Design, Propulsion, Thermal & CAE',
+      badge: 'AEROSPACE & THERMAL',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#BE123C"/><text x="28" y="36" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="900" font-family="Inter,sans-serif">H</text></svg>`
     },
     {
       id: 'siemens-energy',
       name: 'Siemens Energy & Siemens Gamesa',
       shortCode: 'SE',
       url: 'https://jobs.siemens-energy.com/',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Bengaluru · Pune · Gurgaon · Chennai',
       roles: 'Gas/Steam Turbines, Wind Blades, Rotordynamics & CFD/FEA',
-      color: 'from-teal-700 to-cyan-700',
-      badge: 'Turbomachinery & Wind',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#0F766E"/><text x="24" y="29" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="800" font-family="Inter,sans-serif">SE</text></svg>`
+      badge: 'TURBOMACHINERY & WIND',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0F766E"/><text x="28" y="34" text-anchor="middle" fill="#FFFFFF" font-size="16" font-weight="900" font-family="Inter,sans-serif">SE</text></svg>`
     },
     {
       id: 'airbus',
       name: 'Airbus India Engineering Centre',
       shortCode: 'AIR',
       url: 'https://www.airbus.com/en/careers',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Bengaluru (Whitefield)',
       roles: 'Airframe Structures, Stress Analysis, Fatigue, Flight Physics',
-      color: 'from-blue-950 to-blue-700',
-      badge: 'Aerospace Structures',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#172554"/><text x="24" y="29" text-anchor="middle" fill="#93C5FD" font-size="11" font-weight="800" font-family="Inter,sans-serif">AIRBUS</text></svg>`
+      badge: 'AEROSPACE STRUCTURES',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#172554"/><text x="28" y="33" text-anchor="middle" fill="#93C5FD" font-size="11" font-weight="900" font-family="Inter,sans-serif">AIRBUS</text></svg>`
     },
     {
       id: 'caterpillar',
       name: 'Caterpillar India Engineering',
       shortCode: 'CAT',
       url: 'https://careers.caterpillar.com/en/jobs/',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Bengaluru · Chennai (Thiruvallur)',
       roles: 'Heavy Powertrain, IC Engines, Hydraulics & Structural FEA',
-      color: 'from-amber-600 to-yellow-600',
-      badge: 'Heavy Machinery & Engines',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#D97706"/><polygon points="24,33 16,40 32,40" fill="#0F172A"/><text x="24" y="29" text-anchor="middle" fill="#0F172A" font-size="13" font-weight="900" font-family="Inter,sans-serif">CAT</text></svg>`
+      badge: 'HEAVY MACHINERY',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#D97706"/><polygon points="28,36 18,44 38,44" fill="#0F172A"/><text x="28" y="33" text-anchor="middle" fill="#0F172A" font-size="15" font-weight="900" font-family="Inter,sans-serif">CAT</text></svg>`
     },
     {
       id: 'ge-healthcare',
       name: 'GE HealthCare (John F. Welch Tech Centre)',
-      shortCode: 'GEHC',
+      shortCode: 'GE',
       url: 'https://careers.gehealthcare.com/global/en/india-jobs',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Bengaluru (Whitefield EPIP)',
       roles: 'Mechanical Systems, Cryogenics, Thermal & Enclosure Design',
-      color: 'from-purple-800 to-indigo-800',
-      badge: 'Medical Systems R&D',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#581C87"/><circle cx="24" cy="24" r="14" fill="none" stroke="#E9D5FF" stroke-width="2"/><text x="24" y="28" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="800" font-family="Inter,sans-serif">GE</text></svg>`
+      badge: 'MEDICAL SYSTEMS R&D',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#581C87"/><circle cx="28" cy="28" r="16" fill="none" stroke="#E9D5FF" stroke-width="2"/><text x="28" y="33" text-anchor="middle" fill="#FFFFFF" font-size="14" font-weight="900" font-family="Inter,sans-serif">GE</text></svg>`
     },
     {
       id: 'gm',
       name: 'General Motors Technical Centre India',
-      shortCode: 'GM',
+      shortCode: 'gm',
       url: 'https://search-careers.gm.com/en/jobs/',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Bengaluru (ITPL)',
       roles: 'Automotive Body/Chassis, CAE Crash/NVH, Battery Thermal',
-      color: 'from-blue-700 to-blue-500',
-      badge: 'Automotive CAE & EV',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#1D4ED8"/><rect x="10" y="10" width="28" height="28" rx="6" fill="none" stroke="#fff" stroke-width="2"/><text x="24" y="28" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="800" font-family="Inter,sans-serif">gm</text></svg>`
+      badge: 'AUTOMOTIVE CAE & EV',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#1D4ED8"/><rect x="12" y="12" width="32" height="32" rx="7" fill="none" stroke="#fff" stroke-width="2"/><text x="28" y="33" text-anchor="middle" fill="#FFFFFF" font-size="15" font-weight="900" font-family="Inter,sans-serif">gm</text></svg>`
     },
     {
       id: 'schneider',
       name: 'Schneider Electric India R&D',
       shortCode: 'SE',
       url: 'https://careers.se.com/careers-at-schneider-electric',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Bengaluru · Mysuru · Hyderabad',
       roles: 'Electromechanical Switchgear, Thermal Packaging, CAD/PLM',
-      color: 'from-emerald-600 to-green-600',
-      badge: 'Electromechanical Design',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#059669"/><text x="24" y="29" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="900" font-family="Inter,sans-serif">SE</text></svg>`
+      badge: 'ELECTROMECHANICAL R&D',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#059669"/><text x="28" y="34" text-anchor="middle" fill="#FFFFFF" font-size="15" font-weight="900" font-family="Inter,sans-serif">SE</text></svg>`
     },
     {
       id: 'beml',
       name: 'BEML Limited (Ministry of Defence PSU)',
       shortCode: 'BEML',
       url: 'https://www.bemlindia.in/careers/',
-      category: 'Core Mechanical OEM',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Mysuru Complex · Bengaluru · KGF · Palakkad',
       roles: 'Defence, Aerospace, Metro & Rail Coaches, Heavy Earthmovers',
-      color: 'from-slate-900 to-blue-900',
-      badge: 'Mysuru Defence PSU',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#0F172A"/><text x="24" y="28" text-anchor="middle" fill="#38BDF8" font-size="11" font-weight="800" font-family="Inter,sans-serif">BEML</text></svg>`
+      badge: 'MYSURU DEFENCE PSU',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0F172A"/><text x="28" y="33" text-anchor="middle" fill="#38BDF8" font-size="13" font-weight="900" font-family="Inter,sans-serif">BEML</text></svg>`
     },
     {
       id: 'tcs-nextstep',
       name: 'TCS NextStep & All-India NQT Portal',
       shortCode: 'TCS',
       url: 'https://nextstep.tcsapps.com/indiacampus/',
-      category: 'IT & Engineering Services',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Bengaluru · Mysuru · Chennai · Pune',
       roles: 'TCS Ninja, Digital, Prime & EIS (PLM, CAD/CAE, IoT)',
-      color: 'from-blue-800 to-indigo-900',
-      badge: 'NQT Campus Portal',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#1E40AF"/><text x="24" y="29" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="800" font-family="Inter,sans-serif">TCS</text></svg>`
+      badge: 'TCS NQT PORTAL',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#1E40AF"/><text x="28" y="34" text-anchor="middle" fill="#FFFFFF" font-size="14" font-weight="900" font-family="Inter,sans-serif">TCS</text></svg>`
     },
     {
       id: 'infosys',
       name: 'Infosys Careers & Engineering Services',
       shortCode: 'INFY',
       url: 'https://careers.infosys.com/',
-      category: 'IT & Engineering Services',
+      category: '4. Core Mechanical & OEM Portals',
       location: 'Mysuru Global Education Centre · Bengaluru',
       roles: 'Systems Engineer, Specialist Programmer, Turbomachinery & PLM',
-      color: 'from-sky-700 to-blue-700',
-      badge: 'Mysuru Campus Hub',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#0284C7"/><text x="24" y="29" text-anchor="middle" fill="#FFFFFF" font-size="11" font-weight="800" font-family="Inter,sans-serif">Infosys</text></svg>`
-    },
-    {
-      id: 'linkedin',
-      name: 'LinkedIn Jobs (Mechanical & CAE Alerts)',
-      shortCode: 'in',
-      url: 'https://opportunity.linkedin.com/jobs',
-      category: 'Global Job Boards',
-      location: 'Mysuru · Bengaluru · Pan-India',
-      roles: 'Direct Recruiter Outreach, GET & 6-Month Internships',
-      color: 'from-blue-700 to-blue-800',
-      badge: 'Network & Job Alerts',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#0A66C2"/><text x="24" y="31" text-anchor="middle" fill="#FFFFFF" font-size="18" font-weight="900" font-family="Inter,sans-serif">in</text></svg>`
-    },
-    {
-      id: 'naukri',
-      name: 'Naukri.com Engineering & Campus Hub',
-      shortCode: 'N',
-      url: 'https://www.naukri.com/campus-hiring-jobs-in-bengaluru',
-      category: 'Global Job Boards',
-      location: 'Bengaluru · Mysuru · Chennai · Pune',
-      roles: 'Core Design, CAD/CAM, Quality, Boiler/Utility & Production',
-      color: 'from-indigo-800 to-blue-700',
-      badge: 'India #1 Job Board',
-      logoSvg: `<svg viewBox="0 0 48 48" class="w-10 h-10 rounded-xl shrink-0"><rect width="48" height="48" rx="10" fill="#1E3A8A"/><text x="24" y="30" text-anchor="middle" fill="#38BDF8" font-size="16" font-weight="900" font-family="Inter,sans-serif">N</text></svg>`
+      badge: 'MYSURU CAMPUS HUB',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0284C7"/><text x="28" y="33" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="900" font-family="Inter,sans-serif">Infosys</text></svg>`
     }
   ];
 
@@ -4629,20 +5494,157 @@ function formatReadableSyllabus(rawText) {
     ]
   };
 
+  // --- COMBINED VOICE + TEXT AI INTERVIEW ENGINE (TTS + STT + UNIFIED EVALUATION) ---
+  let activeSpeechRecognition = null;
+
+  function speakInterviewText(textToRead) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const cleanSpeech = String(textToRead || '')
+        .replace(/σ_x/g, 'sigma x')
+        .replace(/σ_y/g, 'sigma y')
+        .replace(/τ_xy/g, 'tau x y')
+        .replace(/σ₁,₂|σ₁|σ₂/g, 'principal stress')
+        .replace(/τ_max/g, 'maximum shear stress')
+        .replace(/δ/g, 'deflection delta')
+        .replace(/π/g, 'pi')
+        .replace(/√/g, 'square root of ')
+        .replace(/²/g, ' squared')
+        .replace(/³/g, ' cubed')
+        .replace(/⁴/g, ' to the power 4')
+        .replace(/×|·/g, ' times ');
+
+      const utter = new SpeechSynthesisUtterance(cleanSpeech);
+      utter.rate = 0.98;
+      utter.pitch = 1.0;
+      utter.lang = 'en-IN';
+      state.interviewState.isSpeaking = true;
+      const statusBadge = document.getElementById('iv-voice-status-badge');
+      if (statusBadge) {
+        statusBadge.textContent = '🔊 AI Speaking...';
+        statusBadge.className = 'px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-extrabold text-[11px] animate-pulse';
+      }
+      utter.onend = () => {
+        state.interviewState.isSpeaking = false;
+        const sb = document.getElementById('iv-voice-status-badge');
+        if (sb) {
+          sb.textContent = '🎙️ Voice + Text Ready';
+          sb.className = 'px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[11px]';
+        }
+      };
+      utter.onerror = () => {
+        state.interviewState.isSpeaking = false;
+      };
+      window.speechSynthesis.speak(utter);
+    } catch {}
+  }
+
+  function stopInterviewSpeech() {
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    } catch {}
+    state.interviewState.isSpeaking = false;
+    const sb = document.getElementById('iv-voice-status-badge');
+    if (sb) {
+      sb.textContent = '🎙️ Voice + Text Ready';
+      sb.className = 'px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[11px]';
+    }
+  }
+
+  function toggleVoiceMicrophoneInput() {
+    const SpeechRec = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+    if (!SpeechRec) {
+      showToast('Voice dictation requires Chrome, Edge, or Safari with microphone permission.', 'warn');
+      return;
+    }
+    const iv = state.interviewState;
+    const micBtn = document.getElementById('iv-mic-record-btn');
+    const statusBadge = document.getElementById('iv-voice-status-badge');
+    const ta = document.getElementById('iv-answer-input');
+
+    if (iv.isListening && activeSpeechRecognition) {
+      try { activeSpeechRecognition.stop(); } catch {}
+      iv.isListening = false;
+      if (micBtn) {
+        micBtn.innerHTML = '🎤 Mic Dictation + Text';
+        micBtn.className = 'px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5';
+      }
+      if (statusBadge) {
+        statusBadge.textContent = '✓ Voice + Text Combined';
+        statusBadge.className = 'px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[11px]';
+      }
+      return;
+    }
+
+    stopInterviewSpeech();
+    try {
+      const rec = new SpeechRec();
+      activeSpeechRecognition = rec;
+      rec.lang = 'en-IN';
+      rec.continuous = true;
+      rec.interimResults = true;
+
+      const baseText = ta ? ta.value.trim() : '';
+      iv.isListening = true;
+
+      if (micBtn) {
+        micBtn.innerHTML = '⏹ Stop Mic (Streaming to Text Box...)';
+        micBtn.className = 'px-4 py-2 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg animate-pulse flex items-center gap-1.5';
+      }
+      if (statusBadge) {
+        statusBadge.textContent = '🔴 Listening & Typing Live...';
+        statusBadge.className = 'px-3 py-1 rounded-full bg-rose-600 text-white font-extrabold text-[11px] animate-pulse';
+      }
+
+      rec.onresult = (event) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript + ' ';
+        }
+        const combined = (baseText ? baseText + ' ' : '') + transcript.trim();
+        if (ta) {
+          ta.value = combined;
+          iv.answerText = combined;
+        }
+      };
+
+      rec.onerror = () => {
+        iv.isListening = false;
+        if (micBtn) {
+          micBtn.innerHTML = '🎤 Mic Dictation + Text';
+          micBtn.className = 'px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5';
+        }
+      };
+
+      rec.onend = () => {
+        iv.isListening = false;
+        if (micBtn) {
+          micBtn.innerHTML = '🎤 Mic Dictation + Text';
+          micBtn.className = 'px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5';
+        }
+      };
+
+      rec.start();
+    } catch {
+      iv.isListening = false;
+    }
+  }
+
   function evaluateInterviewResponse(qItem, userAnswer) {
     const clean = String(userAnswer || '').trim();
     const lower = clean.toLowerCase();
     const matchedKeywords = qItem.keywords.filter(kw => lower.includes(kw.toLowerCase()));
     const wordCount = clean ? clean.split(/\s+/).length : 0;
 
-    // Score calculation out of 100
     const kwRatio = matchedKeywords.length / Math.max(1, qItem.keywords.length);
     const lengthBonus = Math.min(25, Math.round(wordCount / 2.5));
     const rawScore = clean.length < 10 ? 0 : Math.min(98, Math.round(kwRatio * 75 + lengthBonus));
 
     const missingKeywords = qItem.keywords.filter(kw => !lower.includes(kw.toLowerCase()));
 
-    // Find matching study guides from state.guides to recommend
     const recommendedGuides = state.guides.filter(g => {
       const hay = `${g.name || ''} ${g.title || ''} ${g.topic || ''} ${g.idea || ''}`.toLowerCase();
       return hay.includes(qItem.studyGuideQuery.toLowerCase()) || hay.includes(qItem.studyTopic.split(' ')[0].toLowerCase());
@@ -4664,14 +5666,190 @@ function formatReadableSyllabus(rawText) {
     };
   }
 
+  function enterInterviewFullscreen(startMicImmediately = false) {
+    state.interviewState.activeFullscreen = true;
+    try {
+      if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } catch {}
+    syncExamFullscreenMode(true);
+    renderPlacementPrep();
+    const iv = state.interviewState;
+    const trackQuestions = AI_INTERVIEW_QUESTION_BANK[iv.track] || AI_INTERVIEW_QUESTION_BANK['Mechanical Design / CAD / GD&T (Creo / NX)'];
+    const activeQ = trackQuestions[iv.qIndex] || trackQuestions[0];
+    if (startMicImmediately) {
+      setTimeout(() => toggleVoiceMicrophoneInput(), 250);
+    } else if (iv.autoSpeak && activeQ) {
+      setTimeout(() => speakInterviewText(`Question ${iv.qIndex + 1} for ${iv.company}. ${activeQ.q}`), 250);
+    }
+  }
+
+  function exitInterviewFullscreen() {
+    stopInterviewSpeech();
+    if (activeSpeechRecognition) {
+      try { activeSpeechRecognition.stop(); } catch {}
+    }
+    state.interviewState.isListening = false;
+    state.interviewState.activeFullscreen = false;
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } catch {}
+    syncExamFullscreenMode(false);
+    renderPlacementPrep();
+  }
+
   function renderPlacementPrep() {
     const iv = state.interviewState;
     const trackQuestions = AI_INTERVIEW_QUESTION_BANK[iv.track] || AI_INTERVIEW_QUESTION_BANK['Mechanical Design / CAD / GD&T (Creo / NX)'];
     iv.qIndex = Math.min(Math.max(0, iv.qIndex), trackQuestions.length - 1);
     const activeQ = trackQuestions[iv.qIndex];
 
+    // =========================================================================
+    // FULL-SCREEN COMBINED VOICE + TEXT INTERVIEW ROOM
+    // (Removes all other portals, headers, sidebars & combines Voice + Text in 1 unified room)
+    // =========================================================================
+    if (iv.activeFullscreen) {
+      syncExamFullscreenMode(true);
+      container.innerHTML = `
+        <div class="max-w-5xl mx-auto py-2 space-y-5">
+          <!-- Top Full-Screen Bar (Only Interview Controls — All Other Sections Removed) -->
+          <div class="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 shadow-xl border border-blue-700/70">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-lg font-black shadow">🎙️</div>
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+                    ⛶ Full-Screen Combined Voice + Text AI Interview
+                  </span>
+                  <span id="iv-voice-status-badge" class="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[11px]">
+                    🎙️ Voice + Text Ready
+                  </span>
+                </div>
+                <h1 class="text-base sm:text-lg font-extrabold text-white mt-0.5">${escapeHtml(iv.company)}</h1>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-200 bg-slate-800 px-3 py-2 rounded-xl border border-slate-700 cursor-pointer">
+                <input id="iv-autospeak-toggle" type="checkbox" ${iv.autoSpeak ? 'checked' : ''} class="rounded text-blue-500">
+                <span>🔊 Auto Voice</span>
+              </label>
+              <button type="button" id="iv-exit-fs-btn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow transition">
+                ✕ Exit Full-Screen Interview
+              </button>
+            </div>
+          </div>
+
+          <!-- Unified Combined Voice + Text Interview Console -->
+          <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-7 shadow-2xl space-y-5">
+            <!-- Track, Company & Question Switcher -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-4 border-b border-slate-200">
+              <div>
+                <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-track-select">Interview Track</label>
+                <select id="iv-track-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold bg-white text-slate-900">
+                  ${Object.keys(AI_INTERVIEW_QUESTION_BANK).map(t => `
+                    <option value="${escapeHtml(t)}" ${iv.track === t ? 'selected' : ''}>${escapeHtml(t)}</option>
+                  `).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-company-select">Recruiter Panel</label>
+                <select id="iv-company-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold bg-white text-slate-900">
+                  ${[
+                    'SJCE Placement Drive (All Core & Tech Recruiters)',
+                    'L&T & LTTS (Mysuru / Bengaluru Core Engineering)',
+                    'Honeywell Aerospace & Airbus India',
+                    'Bosch India & General Motors (Automotive R&D)',
+                    'Siemens Energy, Caterpillar & Schneider Electric',
+                    'GE HealthCare & BEML (Mysuru / Bengaluru)',
+                    'Bizotic / AM2 / AON / TCS NQT Placement Panel'
+                  ].map(c => `<option value="${escapeHtml(c)}" ${iv.company === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="flex items-end gap-2">
+                <button type="button" id="iv-prev-q-btn" class="px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-800">
+                  ← Prev
+                </button>
+                <button type="button" id="iv-next-q-btn" class="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold">
+                  Next Question (${iv.qIndex + 1}/${trackQuestions.length}) →
+                </button>
+              </div>
+            </div>
+
+            <!-- Combined Voice + Text Question Box -->
+            <div class="p-5 rounded-2xl bg-slate-900 text-white space-y-3 shadow-md">
+              <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-blue-300">
+                <span class="font-extrabold">🎙️ QUESTION ${iv.qIndex + 1} OF ${trackQuestions.length} · ${escapeHtml(activeQ.studyTopic)}</span>
+                <div class="flex items-center gap-2">
+                  <button type="button" id="iv-speak-q-btn" class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">
+                    🔊 Speak Question
+                  </button>
+                  <button type="button" id="iv-stop-speech-btn" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold">
+                    🔇 Mute
+                  </button>
+                </div>
+              </div>
+              <p class="text-sm sm:text-base font-bold leading-relaxed text-white">
+                "${escapeHtml(activeQ.q)}"
+              </p>
+            </div>
+
+            <!-- Combined Voice + Text Answer Input Box (Single Unified Input & Single Unified Submit) -->
+            <div class="space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <label class="text-xs sm:text-sm font-extrabold text-slate-900" for="iv-answer-input">
+                  Combined Voice + Text Answer (Speak via 🎤 Mic and/or Type in the same box):
+                </label>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" id="iv-mic-record-btn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5">
+                    🎤 Mic Dictation + Text
+                  </button>
+                  <button type="button" id="iv-fill-sample-btn" class="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-bold hover:bg-blue-100">
+                    ✦ Insert Key Formula Points
+                  </button>
+                </div>
+              </div>
+
+              <textarea id="iv-answer-input" rows="5" class="w-full p-4 rounded-xl border-2 border-slate-300 text-xs sm:text-sm text-slate-900 leading-relaxed focus:border-blue-600 focus:outline-none" placeholder="Speak into your microphone (words appear here automatically) and edit/type your governing formulas and answer here...">${escapeHtml(iv.answerText)}</textarea>
+
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <button type="button" id="iv-evaluate-btn" class="w-full sm:w-auto px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm shadow-lg transition">
+                  🤖 Submit &amp; Evaluate (Combined Voice + Text + Study Guide Suggester) →
+                </button>
+                <span class="text-[11px] text-slate-500">Evaluates your spoken + written answer, speaks feedback aloud &amp; suggests Study Guides.</span>
+              </div>
+            </div>
+
+            <!-- Combined Evaluation + AI Coach + Study Guide Suggester Output -->
+            <div id="iv-evaluation-box" class="${iv.evaluated && iv.lastEvaluation ? '' : 'hidden'} space-y-5 pt-4 border-t border-slate-200">
+              ${iv.evaluated && iv.lastEvaluation ? renderInterviewEvaluationHtml(iv.lastEvaluation, iv.coachFeedbackHtml) : ''}
+            </div>
+          </section>
+        </div>
+      `;
+
+      document.getElementById('iv-exit-fs-btn')?.addEventListener('click', exitInterviewFullscreen);
+      bindInterviewInteractiveControls(iv, trackQuestions, activeQ);
+      bindEvaluationStudyGuideLinks();
+      return;
+    }
+
+    // =========================================================================
+    // NORMAL HUB VIEW (WHEN NOT IN FULL-SCREEN INTERVIEW)
+    // =========================================================================
+    syncExamFullscreenMode(false);
+
     const pf = state.portalFilter;
-    const portalCategories = ['all', 'College Portal', 'Campus & Govt', 'Core Mechanical OEM', 'IT & Engineering Services', 'Global Job Boards'];
+    const portalCategories = [
+      'all',
+      '1. College Portal',
+      '2. NATS, Prosple & General Portals',
+      '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      '4. Core Mechanical & OEM Portals'
+    ];
     const filteredPortals = OFFICIAL_JOB_PORTALS.filter(p => {
       if (pf.category !== 'all' && p.category !== pf.category) return false;
       if (pf.search.trim()) {
@@ -4684,35 +5862,82 @@ function formatReadableSyllabus(rawText) {
     const sjcePortal = OFFICIAL_JOB_PORTALS[0];
 
     container.innerHTML = `
-      <div class="space-y-8">
-        <!-- Header -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 15 · AI Technical Interviewer, Study Guide Recommender &amp; Official Job Portals</span>
-            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">Campus Placement Hub, AI Interview Taker &amp; Career Portals</h1>
-            <p class="text-xs sm:text-sm text-slate-600 mt-1">Practice realistic technical &amp; HR mock interviews with instant Study Guide recommendations, and access your official SJCE College Placement Portal + 18 Core &amp; Campus Job Portals.</p>
+      <div class="space-y-7">
+        <!-- 1. TOP CARD: COMBINED VOICE + TEXT AI INTERVIEW LAUNCHER (OPENS FULL SCREEN & REMOVES OTHER SECTIONS) -->
+        <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-6 shadow-md space-y-4">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div class="space-y-1.5">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-white bg-blue-600 px-3 py-1 rounded-full">
+                  🎙️ Full-Screen Combined Voice + Text AI Interview Taker
+                </span>
+                <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[11px]">
+                  Auto-Hides All Other Portals During Interview
+                </span>
+              </div>
+              <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">
+                AI Technical Interviewer (Voice + Text Combined) &amp; Study Guide Suggester
+              </h1>
+              <p class="text-xs text-slate-600">
+                Select your engineering track and recruiter panel below, then click <b>Start Full-Screen Interview</b>. While interviewing, all other page sections are removed and Voice + Text work together in one unified console.
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button type="button" id="iv-launch-fs-top-btn" class="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm shadow-lg transition flex items-center gap-2">
+                <span>⛶ Start Full-Screen Interview (Voice + Text)</span>
+                <span>→</span>
+              </button>
+              <button type="button" id="iv-launch-fs-mic-btn" class="px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs sm:text-sm shadow transition flex items-center gap-1.5">
+                <span>🎤 Start with Mic On</span>
+              </button>
+            </div>
           </div>
-        </div>
 
-        <!-- 1. FEATURED OFFICIAL COLLEGE PLACEMENT PORTAL CARD (https://sjceplacements.org/) -->
-        <div class="rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white p-6 sm:p-7 shadow-xl border border-blue-700/60">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+            <div>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-track-select">Interview Role / Domain Track</label>
+              <select id="iv-hub-track-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                ${Object.keys(AI_INTERVIEW_QUESTION_BANK).map(t => `
+                  <option value="${escapeHtml(t)}" ${iv.track === t ? 'selected' : ''}>${escapeHtml(t)}</option>
+                `).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-company-select">Target Recruiter Panel</label>
+              <select id="iv-hub-company-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                ${[
+                  'SJCE Placement Drive (All Core & Tech Recruiters)',
+                  'L&T & LTTS (Mysuru / Bengaluru Core Engineering)',
+                  'Honeywell Aerospace & Airbus India',
+                  'Bosch India & General Motors (Automotive R&D)',
+                  'Siemens Energy, Caterpillar & Schneider Electric',
+                  'GE HealthCare & BEML (Mysuru / Bengaluru)',
+                  'Bizotic / AM2 / AON / TCS NQT Placement Panel'
+                ].map(c => `<option value="${escapeHtml(c)}" ${iv.company === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. FIRST PORTAL: FEATURED OFFICIAL SJCE COLLEGE PLACEMENT PORTAL (https://sjceplacements.org/) -->
+        <div class="rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white p-6 sm:p-7 shadow-xl border-2 border-amber-400/80">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div class="flex items-start gap-4">
               ${sjcePortal.logoSvg}
               <div class="space-y-2">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-extrabold text-[11px] uppercase tracking-wider">
-                    ★ Official College Placement Portal
+                    ★ 1ST PRIORITY · OFFICIAL COLLEGE PLACEMENT PORTAL
                   </span>
                   <span class="px-2.5 py-0.5 rounded-full bg-blue-900/90 border border-blue-600 text-blue-200 text-[11px] font-semibold">
                     JSS STU (SJCE) Mysuru · JSSATE Bengaluru · Noida
                   </span>
                 </div>
                 <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight">
-                  JSS Technical Institutions — Unified Placement Portal (SJCE Mysuru)
+                  Placement Portal — JSS Technical Institutions (SJCE Mysuru)
                 </h2>
                 <p class="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-3xl">
-                  Official campus recruitment portal (<code class="text-amber-300">https://sjceplacements.org/</code>) for B.E. Mechanical Engineering campus drives, 8th-semester project internships (Jan–Jun 2027), Graduate Engineer Trainee (GET) registrations, company schedules, and USN student login.
+                  Official campus recruitment portal (<code class="text-amber-300">https://sjceplacements.org/</code>) for B.E. Mechanical Engineering campus drives, 8th-semester project internships (Jan–Jun 2027), Graduate Engineer Trainee (GET) registrations, and USN student login.
                 </p>
               </div>
             </div>
@@ -4732,102 +5957,34 @@ function formatReadableSyllabus(rawText) {
           </div>
         </div>
 
-        <!-- 2. INTERACTIVE AI TECHNICAL INTERVIEW TAKER + PERSONALIZED STUDY GUIDE RECOMMENDER -->
-        <section class="bg-white rounded-2xl border-2 border-blue-200 p-5 sm:p-7 shadow-sm space-y-6">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+        <!-- 3. QUICK LAUNCH APP ICON DOCK (ORDERED: 1. SJCE COLLEGE -> 2. NATS & PROSPLE GENERAL PORTALS -> 3. PREP APPS) -->
+        <div class="bg-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-lg border border-slate-800 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <span class="text-[11px] font-extrabold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
-                🎙️ Interactive AI Interview Taker + Study Guide Suggester
-              </span>
-              <h2 class="text-xl font-extrabold text-slate-900 mt-2">AI Mock Technical Interviewer &amp; Weak-Area Study Guide Recommender</h2>
-              <p class="text-xs text-slate-600 mt-0.5">Select your target mechanical domain and company drive, answer the interviewer’s technical prompt, and receive an instant AI evaluation, model derivation, and direct links to the exact Study Guides &amp; Interactive Schematics you should revise.</p>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-blue-400">Quick-Launch Placement App Dock (1st: SJCE College · 2nd: NATS, Prosple &amp; General Portals · 3rd: Prep Apps)</span>
+              <h3 class="text-base sm:text-lg font-extrabold text-white mt-0.5">1-Click Placement &amp; Internship Portals</h3>
             </div>
-            <div class="text-xs font-bold text-slate-700 bg-slate-100 px-3.5 py-2 rounded-xl border border-slate-200 shrink-0">
-              Question ${iv.qIndex + 1} of ${trackQuestions.length} in Track
-            </div>
+            <span class="text-xs text-slate-400">Click any icon to launch the official portal directly ↗</span>
           </div>
-
-          <!-- Interview Configuration Row -->
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            <div>
-              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-track-select">Interview Role / Domain Track</label>
-              <select id="iv-track-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
-                ${Object.keys(AI_INTERVIEW_QUESTION_BANK).map(t => `
-                  <option value="${escapeHtml(t)}" ${iv.track === t ? 'selected' : ''}>${escapeHtml(t)}</option>
-                `).join('')}
-              </select>
-            </div>
-            <div>
-              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-company-select">Target Recruiter Panel</label>
-              <select id="iv-company-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
-                ${[
-                  'SJCE Placement Drive (All Core & Tech Recruiters)',
-                  'L&T & LTTS (Mysuru / Bengaluru Core Engineering)',
-                  'Honeywell Aerospace & Airbus India',
-                  'Bosch India & General Motors (Automotive R&D)',
-                  'Siemens Energy, Caterpillar & Schneider Electric',
-                  'GE HealthCare & BEML (Mysuru / Bengaluru)',
-                  'Bizotic / AM2 / AON / TCS NQT Placement Panel'
-                ].map(c => `<option value="${escapeHtml(c)}" ${iv.company === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="flex items-end gap-2">
-              <button type="button" id="iv-prev-q-btn" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold">
-                ← Prev Q
-              </button>
-              <button type="button" id="iv-next-q-btn" class="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold">
-                Next Interview Question →
-              </button>
-            </div>
+          <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 gap-3 text-center">
+            ${OFFICIAL_JOB_PORTALS.slice(0, 27).map(p => `
+              <a href="${escapeHtml(p.url)}" target="_blank" rel="noopener noreferrer" class="group p-2.5 rounded-2xl bg-slate-800/90 hover:bg-blue-950 border border-slate-700 hover:border-blue-500 transition flex flex-col items-center gap-2">
+                ${p.logoSvg}
+                <span class="text-[11px] font-bold text-slate-200 group-hover:text-white leading-tight line-clamp-2">${escapeHtml(p.name.split(' (')[0])}</span>
+              </a>
+            `).join('')}
           </div>
+        </div>
 
-          <!-- Active Interviewer Question Prompt -->
-          <div class="p-5 rounded-2xl bg-slate-900 text-white space-y-2.5 shadow">
-            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-blue-300">
-              <span class="font-bold">🎙️ INTERVIEW PANEL (${escapeHtml(iv.company)})</span>
-              <span class="px-2.5 py-0.5 rounded-full bg-blue-950 border border-blue-700 text-[11px]">Syllabus Topic: ${escapeHtml(activeQ.studyTopic)}</span>
-            </div>
-            <p class="text-sm sm:text-base font-bold leading-relaxed text-white">
-              "${escapeHtml(activeQ.q)}"
-            </p>
-          </div>
-
-          <!-- Candidate Answer Box -->
-          <div class="space-y-3">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <label class="text-xs font-bold text-slate-700" for="iv-answer-input">Your Technical Interview Response (Type your explanation, governing formulas, or approach):</label>
-              <button type="button" id="iv-fill-sample-btn" class="text-xs font-semibold text-blue-600 hover:underline">
-                ✦ Insert Structured Key Points Template
-              </button>
-            </div>
-            <textarea id="iv-answer-input" rows="4" class="w-full p-4 rounded-xl border border-slate-300 text-xs sm:text-sm leading-relaxed focus:border-blue-600 focus:outline-none" placeholder="State the governing formula, define the physical mechanism, and explain how the parameters scale...">${escapeHtml(iv.answerText)}</textarea>
-            <div class="flex flex-wrap gap-2.5">
-              <button type="button" id="iv-evaluate-btn" class="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm shadow transition">
-                🤖 Evaluate My Answer &amp; Suggest Study Guides →
-              </button>
-              <button type="button" id="iv-ask-llm-coach-btn" class="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow transition">
-                ⚡ Generate Deep AI Interview Coach Feedback
-              </button>
-            </div>
-          </div>
-
-          <!-- Evaluation & Recommended Study Guides Output -->
-          <div id="iv-evaluation-box" class="${iv.evaluated && iv.lastEvaluation ? '' : 'hidden'} space-y-5 pt-4 border-t border-slate-200">
-            ${iv.evaluated && iv.lastEvaluation ? renderInterviewEvaluationHtml(iv.lastEvaluation) : ''}
-          </div>
-          <div id="iv-ai-coach-box" class="hidden p-5 rounded-2xl bg-blue-50/70 border border-blue-200 text-xs sm:text-sm space-y-3"></div>
-        </section>
-
-        <!-- 3. ALL JOB PORTALS & CORE OEM CAREER LINKS WITH LOGOS -->
+        <!-- 4. COMPLETE DIRECTORY OF ALL JOB PORTALS (ORDERED: 1. COLLEGE -> 2. NATS/PROSPLE/GENERAL -> 3. PREP APPS -> 4. CORE MECHANICAL OEMs) -->
         <section class="space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Verified Direct Career Portals · Zero Aggregator Spam</span>
-              <h2 class="text-xl font-extrabold text-slate-900">Official College, Campus &amp; Core Mechanical Job Portals (${OFFICIAL_JOB_PORTALS.length})</h2>
-              <p class="text-xs text-slate-600">Click any card to open the official recruitment portal directly in a new tab.</p>
+              <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Ordered Hierarchy: 1st SJCE College · 2nd NATS, Prosple &amp; General Portals · 3rd Prep Apps · 4th Core OEMs</span>
+              <h2 class="text-xl font-extrabold text-slate-900">All Placement, Internship &amp; Core Engineering Portals (${OFFICIAL_JOB_PORTALS.length})</h2>
             </div>
             <div class="w-full sm:w-64">
-              <input id="portal-search-input" type="search" value="${escapeHtml(pf.search)}" placeholder="Search SJCE, Bosch, LTTS, Airbus..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white">
+              <input id="portal-search-input" type="search" value="${escapeHtml(pf.search)}" placeholder="Search Prosple, NATS, Internshala, Bosch..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white">
             </div>
           </div>
 
@@ -4857,8 +6014,9 @@ function formatReadableSyllabus(rawText) {
                     </div>
                   </div>
                   <div class="text-xs text-slate-600 space-y-1">
+                    <div><b class="text-slate-800">Category:</b> ${escapeHtml(portal.category)}</div>
                     <div><b class="text-slate-800">Hubs:</b> ${escapeHtml(portal.location)}</div>
-                    <div><b class="text-slate-800">Target Roles:</b> ${escapeHtml(portal.roles)}</div>
+                    <div><b class="text-slate-800">Focus:</b> ${escapeHtml(portal.roles)}</div>
                     <div class="font-mono text-[11px] text-blue-700 truncate pt-0.5">${escapeHtml(portal.url)}</div>
                   </div>
                 </div>
@@ -4867,68 +6025,9 @@ function formatReadableSyllabus(rawText) {
                     Open Official Portal ↗
                   </a>
                   <button type="button" data-prep-company="${escapeHtml(portal.name)}" class="py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-xs transition">
-                    🎙️ Practice Interview
+                    🎙️ Full-Screen Interview
                   </button>
                 </div>
-              </div>
-            `).join('')}
-          </div>
-        </section>
-
-        <!-- 4. COMPANY ASSESSMENT CRACKERS & HIGH-SPEED SHORTCUTS -->
-        <section class="space-y-4">
-          <h2 class="text-lg font-extrabold text-slate-900">Company Assessment Crackers &amp; High-Speed Formula Shortcuts</h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            ${[
-              {
-                title: '1. Bizotic & AM2 Quantitative + Logical Triad',
-                badge: '50+ High-Speed Shortcuts',
-                points: [
-                  '2-Yr & 3-Yr CI–SI Difference: (CI−SI)₂ = P(R/100)² ; (CI−SI)₃ = P(R/100)²(3 + R/100)',
-                  'Commercial Membership & Revenue Target Scaling: New Members = (Target Collection / Discounted Fee) − Existing',
-                  'Mensuration Lawn & Flower Bed Decomposition: Subtract corner quadrants (πr²) and side semicircles from total square area',
-                  'Cryptarithmetic Digital Root (mod 9) and Leading-Digit Carry Bound (Max carry of 2 addends = 1)'
-                ]
-              },
-              {
-                title: '2. AON & TCS NQT Analytical & Numerical Cracker',
-                badge: 'Deductive + DI Mastery',
-                points: [
-                  'Geometric Matrix Cycling: Track 90° clockwise/counter-clockwise quadrant shifts independently for each symbol',
-                  'Relative Speed of Trains & Tunnels: t = (L₁ + L₂) / (V₁ ± V₂) with 1 km/hr = 5/18 m/s',
-                  'Harmonic Mean Rate for Equal Distances / Work Shares: V_avg = 2·u·v / (u + v)',
-                  'Painted n×n×n Cube Identities: 3-face = 8, 2-face = 12(n−2), 1-face = 6(n−2)², 0-face = (n−2)³'
-                ]
-              },
-              {
-                title: '3. Core Mechanical GET Technical Assessment (LTTS / L&T / Bosch / Honeywell)',
-                badge: 'Design & Thermal Core',
-                points: [
-                  'Mohr’s Circle & Combined Loading: Principal stresses σ₁,₂ and Von Mises σ_vm = √(σ² + 3τ²)',
-                  'Helical Spring Scaling Law: δ = 8PD³n/(Gd⁴) → doubling both D and d halves the deflection',
-                  'GD&T Symbols (ASME Y14.5 / ISO 1101): Flatness, Cylindricity, True Position at MMC, and Datum Reference Frames',
-                  'Fe–Fe₃C Phase Diagram: Eutectoid pearlite at 0.76% C (727°C), Eutectic ledeburite at 4.3% C (1147°C), Martensite nose on TTT curve'
-                ]
-              },
-              {
-                title: '4. High-Impact Technical Interview Viva Questions',
-                badge: '62 Interview Entries',
-                points: [
-                  'Why is Carnot cycle impractical for steam plants? (Wet compression & superheated isothermal heat addition challenges)',
-                  'Difference between Flywheel and Governor: Flywheel regulates cyclic intracycle fluctuation (ΔE = Iω²C_s); Governor regulates mean speed against load variation',
-                  'Why is cavitation more severe at pump suction than turbine runner exit? (NPSH_A ≥ NPSH_R margin check)',
-                  'How does cutting speed affect tool life more strongly than feed or depth of cut in Taylor’s VT^n = C?'
-                ]
-              }
-            ].map(card => `
-              <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3 print-card">
-                <div class="flex items-center justify-between">
-                  <h3 class="font-bold text-base text-slate-900">${escapeHtml(card.title)}</h3>
-                  <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">${escapeHtml(card.badge)}</span>
-                </div>
-                <ul class="space-y-2 text-xs text-slate-700 list-disc pl-4">
-                  ${card.points.map(p => `<li>${escapeHtml(p)}</li>`).join('')}
-                </ul>
               </div>
             `).join('')}
           </div>
@@ -4936,61 +6035,16 @@ function formatReadableSyllabus(rawText) {
       </div>
     `;
 
-    // Bind AI Interview Taker controls
-    document.getElementById('iv-track-select')?.addEventListener('change', (e) => {
+    document.getElementById('iv-launch-fs-top-btn')?.addEventListener('click', () => enterInterviewFullscreen(false));
+    document.getElementById('iv-launch-fs-mic-btn')?.addEventListener('click', () => enterInterviewFullscreen(true));
+    document.getElementById('iv-hub-track-select')?.addEventListener('change', (e) => {
       iv.track = e.target.value;
       iv.qIndex = 0;
       iv.evaluated = false;
       iv.answerText = '';
-      renderPlacementPrep();
     });
-    document.getElementById('iv-company-select')?.addEventListener('change', (e) => {
+    document.getElementById('iv-hub-company-select')?.addEventListener('change', (e) => {
       iv.company = e.target.value;
-      renderPlacementPrep();
-    });
-    document.getElementById('iv-prev-q-btn')?.addEventListener('click', () => {
-      iv.qIndex = (iv.qIndex - 1 + trackQuestions.length) % trackQuestions.length;
-      iv.evaluated = false;
-      iv.answerText = '';
-      renderPlacementPrep();
-    });
-    document.getElementById('iv-next-q-btn')?.addEventListener('click', () => {
-      iv.qIndex = (iv.qIndex + 1) % trackQuestions.length;
-      iv.evaluated = false;
-      iv.answerText = '';
-      renderPlacementPrep();
-    });
-    document.getElementById('iv-fill-sample-btn')?.addEventListener('click', () => {
-      const ta = document.getElementById('iv-answer-input');
-      if (ta) {
-        ta.value = activeQ.idealPoints.join('\n');
-        iv.answerText = ta.value;
-      }
-    });
-    document.getElementById('iv-evaluate-btn')?.addEventListener('click', () => {
-      const ta = document.getElementById('iv-answer-input');
-      iv.answerText = ta ? ta.value : '';
-      iv.lastEvaluation = evaluateInterviewResponse(activeQ, iv.answerText);
-      iv.evaluated = true;
-      renderPlacementPrep();
-      bindEvaluationStudyGuideLinks();
-    });
-    document.getElementById('iv-ask-llm-coach-btn')?.addEventListener('click', async () => {
-      const ta = document.getElementById('iv-answer-input');
-      iv.answerText = ta ? ta.value : '';
-      const coachBox = document.getElementById('iv-ai-coach-box');
-      if (!coachBox) return;
-      coachBox.classList.remove('hidden');
-      coachBox.innerHTML = `<div class="font-bold text-blue-700">⚡ AI Interviewer is evaluating your technical explanation &amp; generating follow-up viva questions...</div>`;
-      const prompt = `Act as a Senior Mechanical Engineering Interview Panelist for ${iv.company}.\nInterview Question: ${activeQ.q}\nCandidate's Response: ${iv.answerText || '(Candidate requested model walkthrough)'}\nProvide: 1) Technical accuracy critique & score out of 10, 2) Exact governing equations & SI units required, 3) Recommended study guide topics to revise, and 4) Two follow-up cross-questions.`;
-      const res = await invokeAITutor({ question: prompt, topic: activeQ.studyTopic, mode: 'viva' });
-      coachBox.innerHTML = `
-        <div class="flex items-center justify-between border-b border-blue-200 pb-2">
-          <span class="font-extrabold text-blue-950">🎙️ AI Technical Interview Panel Feedback (${escapeHtml(iv.company)})</span>
-          <span class="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-bold">${escapeHtml(res.provider)}</span>
-        </div>
-        <div class="leading-relaxed text-slate-800">${formatEngineeringMarkdown(res.answer)}</div>
-      `;
     });
 
     // Bind Job Portal Filters
@@ -5007,16 +6061,98 @@ function formatReadableSyllabus(rawText) {
     container.querySelectorAll('[data-prep-company]').forEach(btn => {
       btn.addEventListener('click', () => {
         iv.company = btn.dataset.prepCompany;
-        renderPlacementPrep();
-        document.getElementById('iv-track-select')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        showToast(`Configured AI Interview Taker for ${iv.company}!`, 'success');
+        enterInterviewFullscreen(false);
       });
     });
-
-    bindEvaluationStudyGuideLinks();
   }
 
-  function renderInterviewEvaluationHtml(ev) {
+  function bindInterviewInteractiveControls(iv, trackQuestions, activeQ) {
+    document.getElementById('iv-autospeak-toggle')?.addEventListener('change', (e) => {
+      iv.autoSpeak = Boolean(e.target.checked);
+    });
+    document.getElementById('iv-speak-q-btn')?.addEventListener('click', () => {
+      speakInterviewText(`Question ${iv.qIndex + 1} for ${iv.company}. ${activeQ.q}`);
+    });
+    document.getElementById('iv-stop-speech-btn')?.addEventListener('click', stopInterviewSpeech);
+    document.getElementById('iv-mic-record-btn')?.addEventListener('click', toggleVoiceMicrophoneInput);
+
+    document.getElementById('iv-track-select')?.addEventListener('change', (e) => {
+      iv.track = e.target.value;
+      iv.qIndex = 0;
+      iv.evaluated = false;
+      iv.answerText = '';
+      iv.coachFeedbackHtml = '';
+      renderPlacementPrep();
+      const nextList = AI_INTERVIEW_QUESTION_BANK[iv.track] || trackQuestions;
+      if (iv.autoSpeak && nextList[0]) speakInterviewText(nextList[0].q);
+    });
+    document.getElementById('iv-company-select')?.addEventListener('change', (e) => {
+      iv.company = e.target.value;
+      renderPlacementPrep();
+    });
+    document.getElementById('iv-prev-q-btn')?.addEventListener('click', () => {
+      iv.qIndex = (iv.qIndex - 1 + trackQuestions.length) % trackQuestions.length;
+      iv.evaluated = false;
+      iv.answerText = '';
+      iv.coachFeedbackHtml = '';
+      renderPlacementPrep();
+      if (iv.autoSpeak) speakInterviewText(trackQuestions[iv.qIndex].q);
+    });
+    document.getElementById('iv-next-q-btn')?.addEventListener('click', () => {
+      iv.qIndex = (iv.qIndex + 1) % trackQuestions.length;
+      iv.evaluated = false;
+      iv.answerText = '';
+      iv.coachFeedbackHtml = '';
+      renderPlacementPrep();
+      if (iv.autoSpeak) speakInterviewText(trackQuestions[iv.qIndex].q);
+    });
+    document.getElementById('iv-fill-sample-btn')?.addEventListener('click', () => {
+      const ta = document.getElementById('iv-answer-input');
+      if (ta) {
+        ta.value = activeQ.idealPoints.join('\n');
+        iv.answerText = ta.value;
+      }
+    });
+    document.getElementById('iv-evaluate-btn')?.addEventListener('click', async () => {
+      if (iv.isListening && activeSpeechRecognition) {
+        try { activeSpeechRecognition.stop(); } catch {}
+        iv.isListening = false;
+      }
+      const ta = document.getElementById('iv-answer-input');
+      iv.answerText = ta ? ta.value : '';
+      iv.lastEvaluation = evaluateInterviewResponse(activeQ, iv.answerText);
+      iv.evaluated = true;
+      iv.coachFeedbackHtml = '<div class="text-xs font-bold text-blue-700 animate-pulse">⚡ Generating combined AI panel feedback...</div>';
+      renderPlacementPrep();
+      bindEvaluationStudyGuideLinks();
+      if (iv.autoSpeak && iv.lastEvaluation) {
+        speakInterviewText(`Score ${iv.lastEvaluation.score} out of 100. ${iv.lastEvaluation.strengths} Suggested study guide: ${activeQ.studyTopic}.`);
+      }
+
+      // Automatically fetch combined AI Coach feedback in the same unified evaluation
+      try {
+        const prompt = `Act as a Mechanical Engineering Interview Panelist for ${iv.company}.\nQuestion: ${activeQ.q}\nCandidate Answer: ${iv.answerText || '(Provide model walkthrough)'}\nGive concise feedback, governing formulas, and 1 follow-up viva question.`;
+        const res = await invokeAITutor({ question: prompt, topic: activeQ.studyTopic, mode: 'viva' });
+        iv.coachFeedbackHtml = `
+          <div class="p-4 rounded-2xl bg-slate-900 text-white space-y-2">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+              <span class="font-extrabold text-xs text-amber-400">🎙️ Combined AI Panelist Viva Feedback (${escapeHtml(res.provider)})</span>
+              <button type="button" id="iv-speak-coach-btn" class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold">🔊 Speak Feedback</button>
+            </div>
+            <div class="text-xs leading-relaxed text-slate-200">${formatEngineeringMarkdown(res.answer)}</div>
+          </div>
+        `;
+        const box = document.getElementById('iv-evaluation-box');
+        if (box && iv.lastEvaluation) {
+          box.innerHTML = renderInterviewEvaluationHtml(iv.lastEvaluation, iv.coachFeedbackHtml);
+          bindEvaluationStudyGuideLinks();
+          document.getElementById('iv-speak-coach-btn')?.addEventListener('click', () => speakInterviewText(res.answer.replace(/[#*`]/g, '')));
+        }
+      } catch {}
+    });
+  }
+
+  function renderInterviewEvaluationHtml(ev, coachFeedbackHtml = '') {
     if (!ev || !ev.qItem) return '';
     const qItem = ev.qItem;
     const badgeColor = ev.score >= 75 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : ev.score >= 45 ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-rose-100 text-rose-800 border-rose-300';
@@ -5025,31 +6161,38 @@ function formatReadableSyllabus(rawText) {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase text-slate-500">Interview Readiness Score</span>
+            <span class="text-xs font-bold uppercase text-slate-500">Combined Voice + Text Score</span>
             <span class="px-2.5 py-0.5 rounded-full border text-xs font-extrabold ${badgeColor}">${ev.score} / 100</span>
           </div>
           <div class="text-xs text-slate-700 leading-relaxed"><b>Strengths:</b> ${escapeHtml(ev.strengths)}</div>
-          <div class="text-xs text-amber-900 bg-amber-50 p-2.5 rounded-xl border border-amber-200 leading-relaxed"><b>What to Improve:</b> ${escapeHtml(ev.gaps)}</div>
+          <div class="text-xs text-amber-900 bg-amber-50 p-2.5 rounded-xl border border-amber-200 leading-relaxed"><b>To Improve:</b> ${escapeHtml(ev.gaps)}</div>
           <div class="formula-box text-xs mt-2"><b>Key Formula:</b> ${escapeHtml(qItem.formula)}</div>
         </div>
 
         <div class="lg:col-span-2 p-4 rounded-2xl border border-emerald-200 bg-emerald-50/40 space-y-2.5">
-          <div class="font-extrabold text-xs uppercase tracking-wider text-emerald-900">✓ Model 10/10 Panel Answer &amp; Derivation Points</div>
+          <div class="flex items-center justify-between">
+            <span class="font-extrabold text-xs uppercase tracking-wider text-emerald-900">✓ Model 10/10 Panel Answer (Voice + Text)</span>
+            <button type="button" id="iv-speak-model-ans-btn" class="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold">
+              🔊 Listen to Model Answer
+            </button>
+          </div>
           <ul class="list-disc pl-4 space-y-1.5 text-xs text-slate-800 leading-relaxed">
             ${qItem.idealPoints.map(pt => `<li>${escapeHtml(pt)}</li>`).join('')}
           </ul>
         </div>
       </div>
 
-      <!-- Suggested Study Guides & Interactive Schematics to Revise -->
+      ${coachFeedbackHtml || ''}
+
+      <!-- Suggested Study Guides & Question-Specific Engineering Diagram -->
       <div class="p-5 rounded-2xl bg-blue-50/60 border border-blue-200 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
             <span class="text-[10px] font-extrabold uppercase tracking-wider text-blue-700">📘 Personalized Study Guide Suggester</span>
-            <h3 class="text-sm font-extrabold text-slate-900">Recommended Study Guides &amp; Interactive Calculators for "${escapeHtml(qItem.studyTopic)}"</h3>
+            <h3 class="text-sm font-extrabold text-slate-900">Recommended Study Guides for "${escapeHtml(qItem.studyTopic)}"</h3>
           </div>
           <button type="button" data-open-study-guide="${escapeHtml(qItem.studyGuideQuery)}" class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm">
-            📘 Open Filtered Study Guide (${escapeHtml(qItem.studyGuideQuery)}) →
+            📘 Open Study Guide (${escapeHtml(qItem.studyGuideQuery)}) →
           </button>
         </div>
 
@@ -5059,20 +6202,15 @@ function formatReadableSyllabus(rawText) {
               <div>
                 <span class="text-[10px] font-bold text-blue-700">${escapeHtml(g.sourceBank || 'Core Study Guide')}</span>
                 <h4 class="font-bold text-xs text-slate-900 mt-0.5">${escapeHtml(g.name || g.title)}</h4>
-                <p class="text-[11px] text-slate-600 mt-1 line-clamp-3">${escapeHtml(g.idea || '')}</p>
+                <p class="text-[11px] text-slate-600 mt-1 line-clamp-2">${escapeHtml(g.idea || '')}</p>
               </div>
               <button type="button" data-open-study-guide="${escapeHtml(g.name || g.title || qItem.studyGuideQuery)}" class="text-left text-[11px] font-bold text-blue-600 hover:underline pt-1">
-                Study This Lesson Now →
+                Open Lesson →
               </button>
             </div>
-          `).join('') : `
-            <div class="md:col-span-3 p-3 rounded-xl bg-white border border-blue-200 text-xs text-slate-700">
-              Click <b>Open Filtered Study Guide</b> above to jump directly to the complete notes, derivations, and interactive calculator for <b>${escapeHtml(qItem.studyTopic)}</b>.
-            </div>
-          `}
+          `).join('') : ''}
         </div>
 
-        <!-- Question-Specific Engineering Diagram & Formula Graph -->
         <div class="pt-2">
           ${visualExplanation({ topic: qItem.studyTopic, text: qItem.q + ' ' + qItem.formula })}
         </div>
@@ -5081,9 +6219,23 @@ function formatReadableSyllabus(rawText) {
   }
 
   function bindEvaluationStudyGuideLinks() {
+    document.getElementById('iv-speak-model-ans-btn')?.addEventListener('click', () => {
+      const iv = state.interviewState;
+      const trackQuestions = AI_INTERVIEW_QUESTION_BANK[iv.track] || AI_INTERVIEW_QUESTION_BANK['Mechanical Design / CAD / GD&T (Creo / NX)'];
+      const activeQ = trackQuestions[iv.qIndex];
+      if (activeQ) speakInterviewText(activeQ.idealPoints.join('. '));
+    });
     container.querySelectorAll('[data-open-study-guide]').forEach(btn => {
       btn.addEventListener('click', () => {
         const qStr = btn.dataset.openStudyGuide || '';
+        stopInterviewSpeech();
+        state.interviewState.activeFullscreen = false;
+        try {
+          if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+          }
+        } catch {}
+        syncExamFullscreenMode(false);
         state.guideFilter.search = qStr.split(' ')[0] || '';
         state.guideFilter.source = 'all';
         switchModule('study-guides');
