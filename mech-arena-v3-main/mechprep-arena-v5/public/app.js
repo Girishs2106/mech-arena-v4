@@ -267,6 +267,9 @@
       proctoringEnabled: true,
       geminiVoiceHelper: true,
       title: 'Mechanical Engineering & Placement Mock Exam (v5 Proctored)',
+      difficultyFilter: 'all',
+      coreSliderPct: 80,
+      reportEmail: 'sgirish2106@gmail.com',
       questions: [],
       answers: {},
       questionTimings: {},
@@ -4621,26 +4624,60 @@ function formatReadableSyllabus(rawText) {
   // ==========================================================================
   function applyHeaderOverflowFixAndValidateData() {
     if (typeof document !== 'undefined') {
-      // Fix #app-topbar and #app-sidebar z-index & sticky positioning so sidebar NEVER overlaps the top header bar
-      const topbarEl = document.getElementById('app-topbar');
-      const sidebarEl = document.getElementById('app-sidebar');
-      if (topbarEl) {
-        topbarEl.classList.remove('z-30');
-        topbarEl.classList.add('z-50');
-      }
-      if (sidebarEl) {
-        sidebarEl.classList.remove('z-40', 'inset-y-0');
-        sidebarEl.classList.add('z-20');
-      }
+      const enforceTopbarAndSidebarLayout = () => {
+        const topbarEl = document.getElementById('app-topbar');
+        const sidebarEl = document.getElementById('app-sidebar');
+        const isFullscreenExam = document.body.classList.contains('exam-fullscreen-active');
+        if (isFullscreenExam) return;
+
+        // Replace body overflow-x: hidden with clip so position: sticky never breaks in Chromium
+        document.body.style.setProperty('overflow-x', 'clip', 'important');
+
+        if (topbarEl) {
+          topbarEl.classList.remove('z-30', 'z-40');
+          topbarEl.classList.add('z-50');
+          topbarEl.style.setProperty('position', 'sticky', 'important');
+          topbarEl.style.setProperty('top', '0px', 'important');
+          topbarEl.style.setProperty('left', '0px', 'important');
+          topbarEl.style.setProperty('right', '0px', 'important');
+          topbarEl.style.setProperty('z-index', '9999', 'important');
+          topbarEl.style.setProperty('background-color', '#0F172A', 'important');
+          topbarEl.style.setProperty('width', '100%', 'important');
+        }
+
+        if (sidebarEl) {
+          const topbarH = topbarEl ? Math.max(58, topbarEl.offsetHeight || 60) : 60;
+          sidebarEl.classList.remove('z-40', 'inset-y-0');
+          sidebarEl.classList.add('z-20');
+          if (window.innerWidth >= 1024) {
+            sidebarEl.style.setProperty('position', 'sticky', 'important');
+            sidebarEl.style.setProperty('top', `${topbarH}px`, 'important');
+            sidebarEl.style.setProperty('height', `calc(100vh - ${topbarH}px)`, 'important');
+            sidebarEl.style.setProperty('max-height', `calc(100vh - ${topbarH}px)`, 'important');
+            sidebarEl.style.setProperty('z-index', '10', 'important');
+            sidebarEl.style.setProperty('align-self', 'flex-start', 'important');
+            sidebarEl.style.setProperty('overflow-y', 'auto', 'important');
+          } else {
+            sidebarEl.style.setProperty('position', 'fixed', 'important');
+            sidebarEl.style.setProperty('top', `${topbarH}px`, 'important');
+            sidebarEl.style.setProperty('height', `calc(100vh - ${topbarH}px)`, 'important');
+            sidebarEl.style.setProperty('max-height', `calc(100vh - ${topbarH}px)`, 'important');
+            sidebarEl.style.setProperty('z-index', '9990', 'important');
+            sidebarEl.style.setProperty('overflow-y', 'auto', 'important');
+          }
+        }
+      };
 
       if (!document.getElementById('v5-layout-bugfix-style')) {
         const st = document.createElement('style');
         st.id = 'v5-layout-bugfix-style';
         st.textContent = `
+          body { overflow-x: clip !important; }
           #app-topbar {
             position: sticky !important;
-            top: 0 !important;
-            z-index: 60 !important;
+            top: 0px !important;
+            z-index: 9999 !important;
+            background-color: #0F172A !important;
             display: flex !important;
             flex-wrap: wrap !important;
             align-items: center !important;
@@ -4655,21 +4692,19 @@ function formatReadableSyllabus(rawText) {
             min-width: 0 !important;
             max-width: 100% !important;
           }
-          /* Ensure left sidebar never overlaps #app-topbar on desktop or mobile scroll */
           #app-sidebar {
-            z-index: 30 !important;
+            z-index: 10 !important;
             top: 60px !important;
             height: calc(100vh - 60px) !important;
             max-height: calc(100vh - 60px) !important;
+            align-self: flex-start !important;
             overflow-y: auto !important;
           }
           @media (min-width: 1024px) {
             #app-sidebar {
               position: sticky !important;
               top: 60px !important;
-              height: calc(100vh - 60px) !important;
-              max-height: calc(100vh - 60px) !important;
-              z-index: 20 !important;
+              z-index: 10 !important;
               transform: none !important;
             }
           }
@@ -4679,8 +4714,7 @@ function formatReadableSyllabus(rawText) {
               top: 60px !important;
               bottom: 0 !important;
               left: 0 !important;
-              height: calc(100vh - 60px) !important;
-              z-index: 50 !important;
+              z-index: 9990 !important;
             }
           }
           #module-container h1, #module-container h2, #module-container h3 {
@@ -4690,6 +4724,12 @@ function formatReadableSyllabus(rawText) {
         `;
         document.head.appendChild(st);
       }
+
+      enforceTopbarAndSidebarLayout();
+      window.addEventListener('resize', enforceTopbarAndSidebarLayout);
+      window.addEventListener('scroll', enforceTopbarAndSidebarLayout, { passive: true });
+      setTimeout(enforceTopbarAndSidebarLayout, 200);
+      setTimeout(enforceTopbarAndSidebarLayout, 800);
     }
 
     if (state._v5TechnicalTestReviewInjected) return;
@@ -5269,6 +5309,119 @@ function formatReadableSyllabus(rawText) {
     });
   }
 
+  // ==========================================================================
+  // EMAIL REPORT DROP BOX HELPER (PRE-FILLED WITH sgirish2106@gmail.com)
+  // ==========================================================================
+  function buildPlainTextReportSummary(summaryObj) {
+    const lines = [
+      `====================================================================`,
+      `MECHPREP ARENA v5.0 — OFFICIAL PERFORMANCE & TIMING REPORT`,
+      `====================================================================`,
+      `Candidate: Girish S (B.E. Mechanical Engineering, SJCE Mysuru)`,
+      `Recipient Email: ${summaryObj.email || 'sgirish2106@gmail.com'}`,
+      `Assessment Type: ${summaryObj.title || 'Proctored Assessment'}`,
+      `Date & Time: ${new Date().toLocaleString()}`,
+      `Difficulty Level: ${summaryObj.difficulty || 'All Levels'} | Core/Aptitude Split: ${summaryObj.corePct ?? 80}% Core / ${100 - (summaryObj.corePct ?? 80)}% Aptitude`,
+      `Overall Score: ${summaryObj.scorePct}% (${summaryObj.scoreDetail || ''})`,
+      `Total Answering Time: ${summaryObj.totalTimeStr || '0m 0s'} (Avg: ${summaryObj.avgTimeStr || '0s/Q'})`,
+      `AI Camera Proctoring Warnings: ${summaryObj.warnings || 0} / 3`,
+      `--------------------------------------------------------------------`,
+      `QUESTION-BY-QUESTION TIMING & SCORE BREAKDOWN:`,
+      ...(summaryObj.items || []).map((it, idx) =>
+        `Q${idx + 1} [${it.topic || 'Core'} | ${it.difficulty || 'Standard'} | Time: ${it.timeSec || 0}s] -> ${it.status}: ${it.prompt}`
+      ),
+      `====================================================================`
+    ];
+    return lines.join('\n');
+  }
+
+  function renderEmailReportDropBoxHtml(prefixId, currentEmail, titleText) {
+    const emailVal = currentEmail || 'sgirish2106@gmail.com';
+    return `
+      <div class="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-5 border-2 border-blue-500 shadow-xl space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">📧 Automated Performance &amp; Timing Report Drop Box</span>
+            <h3 class="text-base sm:text-lg font-extrabold text-white mt-0.5">${escapeHtml(titleText || 'Send Complete Score, Timing & Formula Report via Email')}</h3>
+          </div>
+          <span class="px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono text-xs font-bold">
+            Default: sgirish2106@gmail.com
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <div class="md:col-span-2">
+            <label class="block text-[11px] font-bold uppercase text-blue-200 mb-1" for="${prefixId}-email-input">
+              Recipient Email Address (Drop Report To):
+            </label>
+            <input id="${prefixId}-email-input" type="email" value="${escapeHtml(emailVal)}" placeholder="sgirish2106@gmail.com" class="w-full px-4 py-2.5 rounded-xl bg-slate-950 border-2 border-blue-500 text-white font-mono text-xs sm:text-sm focus:outline-none focus:border-amber-400">
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="${prefixId}-send-gmail-btn" class="flex-1 py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow-lg transition">
+              📧 Send via Gmail ↗
+            </button>
+            <button type="button" id="${prefixId}-send-mailto-btn" class="py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition">
+              ✉️ Mail App
+            </button>
+            <button type="button" id="${prefixId}-download-txt-btn" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold text-xs transition">
+              ⬇ .TXT
+            </button>
+          </div>
+        </div>
+        <div id="${prefixId}-email-status" class="text-[11px] text-emerald-300 font-semibold hidden"></div>
+      </div>
+    `;
+  }
+
+  function bindEmailReportDropBoxEvents(prefixId, summaryObj, onEmailChange) {
+    const emailInput = document.getElementById(`${prefixId}-email-input`);
+    const statusEl = document.getElementById(`${prefixId}-email-status`);
+
+    emailInput?.addEventListener('input', (e) => {
+      if (typeof onEmailChange === 'function') onEmailChange(e.target.value.trim());
+    });
+
+    document.getElementById(`${prefixId}-send-gmail-btn`)?.addEventListener('click', () => {
+      const targetEmail = (emailInput?.value?.trim() || 'sgirish2106@gmail.com');
+      summaryObj.email = targetEmail;
+      const bodyText = buildPlainTextReportSummary(summaryObj);
+      const subject = `MechPrep v5 Report: ${summaryObj.title} (${summaryObj.scorePct}%)`;
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(targetEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+      window.open(gmailUrl, '_blank', 'noopener,noreferrer');
+      if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = `✓ Opened Gmail compose window addressed to ${targetEmail} with your complete performance & timing report!`;
+      }
+      showToast(`Prepared performance report for ${targetEmail}!`, 'success');
+    });
+
+    document.getElementById(`${prefixId}-send-mailto-btn`)?.addEventListener('click', () => {
+      const targetEmail = (emailInput?.value?.trim() || 'sgirish2106@gmail.com');
+      summaryObj.email = targetEmail;
+      const bodyText = buildPlainTextReportSummary(summaryObj);
+      const subject = `MechPrep v5 Report: ${summaryObj.title} (${summaryObj.scorePct}%)`;
+      window.location.href = `mailto:${encodeURIComponent(targetEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+      if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = `✓ Triggered default mail client to ${targetEmail}.`;
+      }
+    });
+
+    document.getElementById(`${prefixId}-download-txt-btn`)?.addEventListener('click', () => {
+      const targetEmail = (emailInput?.value?.trim() || 'sgirish2106@gmail.com');
+      summaryObj.email = targetEmail;
+      const bodyText = buildPlainTextReportSummary(summaryObj);
+      const blob = new Blob([bodyText], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `MechPrep_Report_${targetEmail.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Downloaded performance report for ${targetEmail}!`, 'success');
+    });
+  }
+
   // --- MODULE 14: TIMED MOCK TESTS (VERSION 5: 3-WARNING AUTO-END, EXIT WARNING MODAL, TIMING TRACKER & GEMINI VOICE HELPER) ---
   function renderMockTests() {
     const m = state.mockExam;
@@ -5481,6 +5634,9 @@ function formatReadableSyllabus(rawText) {
               </div>
             </div>
 
+            <!-- Email Report Drop Box (sgirish2106@gmail.com) -->
+            ${renderEmailReportDropBoxHtml('mock-rep', m.reportEmail || 'sgirish2106@gmail.com', 'Drop Mock Test Performance & Timing Report to sgirish2106@gmail.com')}
+
             <!-- 4-Card Timing & Proctoring Telemetry Strip -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700">
@@ -5550,6 +5706,25 @@ function formatReadableSyllabus(rawText) {
           </div>
         </div>
       `;
+      bindEmailReportDropBoxEvents('mock-rep', {
+        email: m.reportEmail || 'sgirish2106@gmail.com',
+        title: m.title,
+        difficulty: m.difficultyFilter || 'All Levels',
+        corePct: m.coreSliderPct ?? 80,
+        scorePct: r.pct,
+        scoreDetail: `${r.earnedMarks}/${r.maxMarks} Marks (${r.correct} Correct, ${r.wrong} Wrong, ${r.unanswered} Unanswered)`,
+        totalTimeStr: `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`,
+        avgTimeStr: `${avgSecPerQ}s/Q`,
+        warnings: state.proctorState.warningCount,
+        items: m.questions.map(q => ({
+          topic: q.topic,
+          difficulty: q.difficulty || 'Standard',
+          timeSec: m.questionTimings[q.id] || 0,
+          status: m.answers[q.id] === undefined ? 'UNANSWERED' : m.answers[q.id] === Number(q.answer) ? 'CORRECT' : 'WRONG',
+          prompt: String(q.text).replace(/<[^>]+>/g, '').slice(0, 110)
+        }))
+      }, (val) => { m.reportEmail = val; });
+
       document.getElementById('speak-mock-report-btn')?.addEventListener('click', () => {
         speakInterviewText(`Here is your Gemini performance summary. You scored ${r.pct} percent with ${r.correct} correct answers out of ${m.questions.length}. Your average answering speed was ${avgSecPerQ} seconds per question, with ${state.proctorState.warningCount} proctoring warnings.`);
       });
@@ -5567,26 +5742,41 @@ function formatReadableSyllabus(rawText) {
       return;
     }
 
-    // Setup View (Version 5 Proctored Exam + Camera ON/OFF Option + Technical Test Review Preset)
+    // Setup View (Version 5 Proctored Exam + Difficulty Basic/Inter/Adv + Core vs Aptitude Slider + Email Report Box)
+    const curCorePct = m.coreSliderPct ?? 80;
+    const curAptPct = 100 - curCorePct;
+    const defaultQCount = 10;
+    const initCoreQs = Math.round(defaultQCount * (curCorePct / 100));
+    const initAptQs = defaultQCount - initCoreQs;
+
     container.innerHTML = `
       <div class="space-y-6">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 14 · Version 5 AI-Proctored Timed Mock Examinations &amp; Per-Question Timing Tracker</span>
-            <h1 class="text-2xl font-extrabold text-slate-900">Configure Proctored Mock Examination (Camera ON/OFF · 3-Warning Auto-End)</h1>
-            <p class="text-xs text-slate-600 mt-1">Tracks exact seconds spent per question, detects face &amp; motion when Camera is ON, warns on exit click, and auto-ends session if 3 warnings are exceeded.</p>
+            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 14 · Version 5 AI-Proctored Timed Mock Examinations &amp; Custom Mix Controller</span>
+            <h1 class="text-2xl font-extrabold text-slate-900">Configure Proctored Mock Exam (Basic / Inter / Adv + Core &amp; Aptitude Slider)</h1>
+            <p class="text-xs text-slate-600 mt-1">Select difficulty level (<b>Basic, Intermediate, Advanced</b>), adjust the <b>Core Mechanical vs Aptitude controlling slider</b>, toggle Camera ON/OFF, and drop your report to <b>sgirish2106@gmail.com</b>.</p>
           </div>
         </div>
 
         <div class="bg-white rounded-2xl border-2 border-blue-600 p-6 shadow-md max-w-4xl space-y-5">
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label class="block text-xs font-bold uppercase text-slate-500 mb-1" for="mock-focus">Assessment Track</label>
+              <label class="block text-xs font-bold uppercase text-slate-500 mb-1" for="mock-focus">Assessment Mode</label>
               <select id="mock-focus" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
-                <option value="tech-review">⭐ Technical Test Review Pack (AGV, Pneumatics, Bearings, 5S &amp; Core)</option>
-                <option value="mixed">Actual Job Process Stage 1: Aptitude + Core Mechanical (80/20)</option>
-                <option value="technical">Core Mechanical Engineering Only (GATE / OEM / Naukri / Unstop)</option>
-                <option value="aptitude">Placement Aptitude Only (Bizotic / AM2 / AON / TCS NQT)</option>
+                <option value="slider-mix" selected>🎚️ Custom Slider Mix (Core Mechanical + Aptitude)</option>
+                <option value="tech-review">⭐ Technical Test Review Pack (AGV, Pneumatics, Bearings, 5S)</option>
+                <option value="technical">⚙️ 100% Core Mechanical Engineering (GATE / OEM / Unstop)</option>
+                <option value="aptitude">🧮 100% Placement Aptitude (Bizotic / AM2 / AON / TCS NQT)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-500 mb-1" for="mock-diff-select">Difficulty Level (Basic / Inter / Adv)</label>
+              <select id="mock-diff-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-bold bg-white text-blue-950">
+                <option value="all" ${m.difficultyFilter === 'all' ? 'selected' : ''}>All Levels (Balanced Basic + Inter + Adv)</option>
+                <option value="Basic" ${m.difficultyFilter === 'Basic' ? 'selected' : ''}>🟢 Basic (Foundation Concepts &amp; Definitions)</option>
+                <option value="Intermediate" ${m.difficultyFilter === 'Intermediate' ? 'selected' : ''}>🟡 Intermediate (Campus GET &amp; 1-Mark Numericals)</option>
+                <option value="Advanced" ${m.difficultyFilter === 'Advanced' ? 'selected' : ''}>🔴 Advanced (2-Mark Design, AGV &amp; Deep Numericals)</option>
               </select>
             </div>
             <div>
@@ -5611,15 +5801,37 @@ function formatReadableSyllabus(rawText) {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <label class="inline-flex items-center gap-2.5 text-xs font-bold text-slate-800 cursor-pointer">
+          <!-- Interactive Core Mechanical vs Aptitude Controlling Slider -->
+          <div class="p-4 rounded-2xl bg-slate-900 text-white space-y-2.5 border border-blue-800">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <label class="text-xs font-extrabold uppercase tracking-wider text-amber-400" for="mock-core-slider">
+                🎚️ Core Mechanical vs Placement Aptitude Controlling Slider
+              </label>
+              <span id="mock-slider-readout" class="px-3 py-1 rounded-full bg-blue-950 border border-blue-600 text-xs font-extrabold text-blue-200">
+                ⚙️ ${curCorePct}% Core Mechanical (${initCoreQs} Qs) · 🧮 ${curAptPct}% Aptitude (${initAptQs} Qs)
+              </span>
+            </div>
+            <input id="mock-core-slider" type="range" min="0" max="100" step="5" value="${curCorePct}" class="w-full accent-blue-500 cursor-pointer">
+            <div class="flex justify-between text-[11px] text-slate-400 font-semibold">
+              <span>0% Core (100% Aptitude)</span>
+              <span>50% Core / 50% Aptitude</span>
+              <span>80% Core / 20% Aptitude (Default)</span>
+              <span>100% Core Mechanical</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200 items-center">
+            <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
               <input id="mock-neg-toggle" type="checkbox" checked class="rounded text-blue-600">
-              <span>Enable Negative Marking (+4 Correct, −1 Wrong)</span>
+              <span>Negative Marking (+4 / −1)</span>
             </label>
-            <label class="inline-flex items-center gap-2.5 text-xs font-bold text-blue-900 cursor-pointer">
+            <label class="inline-flex items-center gap-2 text-xs font-bold text-blue-900 cursor-pointer">
               <input id="mock-proctor-toggle" type="checkbox" ${m.proctoringEnabled ? 'checked' : ''} class="rounded text-blue-600">
-              <span>📷 Camera ON/OFF: Enable AI Cheating Detector (3 Warnings Auto-End)</span>
+              <span>📷 Camera ON/OFF (3-Warn Auto-End)</span>
             </label>
+            <div>
+              <input id="mock-setup-email" type="email" value="${escapeHtml(m.reportEmail || 'sgirish2106@gmail.com')}" placeholder="sgirish2106@gmail.com" class="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-mono" title="Report Drop Email">
+            </div>
           </div>
 
           <div class="flex flex-wrap gap-3">
@@ -5634,28 +5846,65 @@ function formatReadableSyllabus(rawText) {
       </div>
     `;
 
+    const updateMockSliderReadout = () => {
+      const sliderVal = Number(document.getElementById('mock-core-slider')?.value ?? 80);
+      const qCnt = Number(document.getElementById('mock-q-count')?.value ?? 10);
+      m.coreSliderPct = sliderVal;
+      const cQs = Math.round(qCnt * (sliderVal / 100));
+      const aQs = qCnt - cQs;
+      const rd = document.getElementById('mock-slider-readout');
+      if (rd) {
+        rd.textContent = `⚙️ ${sliderVal}% Core Mechanical (${cQs} Qs) · 🧮 ${100 - sliderVal}% Aptitude (${aQs} Qs)`;
+      }
+    };
+    document.getElementById('mock-core-slider')?.addEventListener('input', updateMockSliderReadout);
+    document.getElementById('mock-q-count')?.addEventListener('change', updateMockSliderReadout);
+    document.getElementById('mock-focus')?.addEventListener('change', (e) => {
+      const sl = document.getElementById('mock-core-slider');
+      if (!sl) return;
+      if (e.target.value === 'technical') sl.value = '100';
+      else if (e.target.value === 'aptitude') sl.value = '0';
+      else if (e.target.value === 'slider-mix') sl.value = '80';
+      updateMockSliderReadout();
+    });
+
     const startExamNow = (isJobPipeline = false) => {
-      const focus = document.getElementById('mock-focus')?.value || 'mixed';
+      const focus = document.getElementById('mock-focus')?.value || 'slider-mix';
+      const diffFilter = document.getElementById('mock-diff-select')?.value || 'all';
       const count = Number(document.getElementById('mock-q-count')?.value || 10);
       const mins = Number(document.getElementById('mock-mins')?.value || 20);
       const neg = Boolean(document.getElementById('mock-neg-toggle')?.checked);
       const proc = Boolean(document.getElementById('mock-proctor-toggle')?.checked);
+      const corePct = Number(document.getElementById('mock-core-slider')?.value ?? 80);
+      const repEmail = document.getElementById('mock-setup-email')?.value?.trim() || 'sgirish2106@gmail.com';
 
-      const mcqPool = state.questions.filter(q => Array.isArray(q.options) && q.options.length >= 2 && q.answer !== undefined);
+      m.difficultyFilter = diffFilter;
+      m.coreSliderPct = corePct;
+      m.reportEmail = repEmail;
+
+      const allMcqs = state.questions.filter(q => Array.isArray(q.options) && q.options.length >= 2 && q.answer !== undefined);
+      const diffMatchedMcqs = diffFilter === 'all'
+        ? allMcqs
+        : allMcqs.filter(q => String(q.difficulty || 'Intermediate').toLowerCase() === diffFilter.toLowerCase());
+      const activePool = diffMatchedMcqs.length >= count ? diffMatchedMcqs : allMcqs;
+
       let chosenQuestions = [];
 
       if (focus === 'tech-review') {
-        const revPool = mcqPool.filter(q => q.sourceType === 'technical-review');
-        const restTech = mcqPool.filter(q => q.sourceType !== 'technical-review' && !/aptitude|logical|verbal/i.test(q.topic)).sort(() => Math.random() - 0.5);
-        chosenQuestions = revPool.concat(restTech).slice(0, count);
+        const revPool = activePool.filter(q => q.sourceType === 'technical-review');
+        const restPool = activePool.filter(q => q.sourceType !== 'technical-review').sort(() => Math.random() - 0.5);
+        chosenQuestions = revPool.concat(restPool).slice(0, count);
       } else {
-        const filteredPool = mcqPool.filter(q => {
-          const isApt = /aptitude|logical|verbal|train/i.test(q.topic);
-          if (focus === 'technical') return !isApt;
-          if (focus === 'aptitude') return isApt;
-          return true;
-        });
-        chosenQuestions = filteredPool.slice().sort(() => Math.random() - 0.5).slice(0, count);
+        const corePool = activePool.filter(q => !/aptitude|logical|verbal|train/i.test(q.topic)).sort(() => Math.random() - 0.5);
+        const aptPool = activePool.filter(q => /aptitude|logical|verbal|train/i.test(q.topic)).sort(() => Math.random() - 0.5);
+        const targetCoreCount = focus === 'technical' ? count : focus === 'aptitude' ? 0 : Math.round(count * (corePct / 100));
+        const targetAptCount = count - targetCoreCount;
+        chosenQuestions = corePool.slice(0, targetCoreCount).concat(aptPool.slice(0, targetAptCount));
+        if (chosenQuestions.length < count) {
+          const usedIds = new Set(chosenQuestions.map(q => q.id));
+          const extra = activePool.filter(q => !usedIds.has(q.id)).sort(() => Math.random() - 0.5);
+          chosenQuestions = chosenQuestions.concat(extra.slice(0, count - chosenQuestions.length));
+        }
       }
 
       if (m.timerId) clearInterval(m.timerId);
@@ -6552,28 +6801,260 @@ function formatReadableSyllabus(rawText) {
     } catch {}
   }
 
+  // Self-Generating HR Interview Templates (40+ upGrad & Campus HR Scenarios dynamically parameterized per company)
+  const SELF_GEN_HR_TEMPLATES = [
+    {
+      cat: 'HR Icebreaker & Elevator Pitch',
+      qTpl: 'Tell me about yourself, your B.E. Mechanical Engineering journey at SJCE Mysuru, and why you are excited to join {COMPANY} as a Graduate Engineer Trainee.',
+      kw: ['mechanical', 'sjce', 'internship', 'project', 'cad', 'problem solving', 'contribute', 'team'],
+      points: [
+        'Present → Past → Future Formula: State your B.E. Mechanical Engineering background at SJCE Mysuru and core proficiency in Creo, Siemens NX, and ANSYS.',
+        'Highlight Hands-On Projects & Internship: Mention your LisHawk bird-wing morphing mechanism and JK Tyre VTP-1 utility/boiler engineering internship.',
+        'Company Alignment: Connect your practical design + plant troubleshooting skills directly to {COMPANY}’s engineering goals.'
+      ]
+    },
+    {
+      cat: 'HR Company Research & Motivation',
+      qTpl: 'What do you know about {COMPANY}’s engineering products and culture, and why should we hire you over other mechanical engineering candidates?',
+      kw: ['innovation', 'quality', 'reliability', 'hands-on', 'cad', 'adaptable', 'fast learner', 'value'],
+      points: [
+        'Demonstrate Company Research: Reference {COMPANY}’s core product lines, R&D focus in Bengaluru/Mysuru/India, and commitment to engineering quality.',
+        'Differentiate Your Profile: Combine 3D CAD/FEA simulation skills with real industrial boiler/pneumatic/AGV numerical problem-solving.',
+        'Show Ownership: Emphasize day-one readiness, eagerness to learn shop-floor & design standards, and collaborative mindset.'
+      ]
+    },
+    {
+      cat: 'HR Strengths & Quantified Impact',
+      qTpl: 'What are your top three strengths as an engineer, and can you share a real academic or internship example where those strengths delivered measurable results?',
+      kw: ['strength', 'analytical', 'cad', 'troubleshooting', 'teamwork', 'result', 'deadline', 'efficiency'],
+      points: [
+        'Pick Role-Relevant Strengths: Analytical root-cause troubleshooting, precision 3D CAD/GD&T modeling, and disciplined execution.',
+        'Back with a STAR Story: Describe how you analyzed utility plant equipment at JK Tyre or optimized linkage kinematics in the LisHawk project.',
+        'Quantify the Outcome: State the exact improvement in cycle time, structural safety factor, or team delivery speed.'
+      ]
+    },
+    {
+      cat: 'HR Weakness & Self-Improvement',
+      qTpl: 'What is a genuine weakness you have noticed in your work style, and what concrete system or habit have you built to overcome it?',
+      kw: ['weakness', 'detail', 'time', 'checklist', 'schedule', 'prioritize', 'improve', 'milestone'],
+      points: [
+        'Be Authentic but Professional: Mention a real trait such as spending extra time verifying unit conversions or refining CAD assembly constraints.',
+        'Show Your Corrective System: Explain how you now use time-boxed milestones and a standardized SI-unit/GD&T verification checklist.',
+        'Positive Result: Show how this habit helped you submit recent semester projects ahead of schedule without errors.'
+      ]
+    },
+    {
+      cat: 'HR Team Conflict Resolution (STAR)',
+      qTpl: 'Tell me about a time you had a technical disagreement or conflict with a teammate during a project. How did you resolve it without delaying the deadline?',
+      kw: ['conflict', 'listen', 'perspective', 'data', 'simulation', 'compromise', 'team', 'deadline'],
+      points: [
+        'Situation & Task: Describe a design or schedule disagreement during a 4-member mechanical capstone or lab project.',
+        'Action (Data Over Ego): Instead of arguing, you listened to their reasoning, ran a quick CAD/stress calculation to compare both options objectively, and combined the best features.',
+        'Result: The team stayed united, met the submission deadline early, and achieved a stronger design.'
+      ]
+    },
+    {
+      cat: 'HR Handling Tight Deadlines & Pressure',
+      qTpl: 'Suppose {COMPANY} assigns you two urgent engineering deliverables due on the same Friday afternoon. How do you prioritize your work and handle the pressure?',
+      kw: ['prioritize', 'urgency', 'impact', 'communicate', 'breakdown', 'milestone', 'quality', 'calm'],
+      points: [
+        'Prioritization Matrix: Rank tasks by critical-path impact and safety/client urgency.',
+        'Proactive Communication: Break deliverables into 2-hour sub-tasks, keep your manager updated on progress, and flag any resource bottlenecks early.',
+        'Real Example: Relate how you balanced 6th/7th-semester CIE assignments, placement prep, and project builds calmly.'
+      ]
+    },
+    {
+      cat: 'HR Constructive Criticism & Feedback',
+      qTpl: 'Can you share an instance where a professor, mentor, or internship supervisor gave you critical feedback? How did you respond and apply it?',
+      kw: ['feedback', 'criticism', 'listen', 'learn', 'improve', 'action', 'positive', 'growth'],
+      points: [
+        'Receptive Attitude: Treat constructive criticism as free engineering mentorship rather than personal criticism.',
+        'Concrete Action Taken: Explain how you immediately updated your calculation method, drawing tolerances, or report formatting.',
+        'Measurable Improvement: Show how the next review or assessment earned top marks.'
+      ]
+    },
+    {
+      cat: 'HR Learning from Failure / Setback',
+      qTpl: 'Describe a time when a prototype, calculation, or test did not go as planned. How did you take ownership and fix the issue?',
+      kw: ['failure', 'mistake', 'ownership', 'root cause', 'fix', 'lesson', 'prevent', 'checklist'],
+      points: [
+        'Own It Directly: Never blame teammates or tools—state clearly what went wrong (e.g., an initial mechanism link interference or unit mismatch in a test).',
+        'Root-Cause Diagnosis: Explain how you isolated the error using Grashof’s law / SI unit checking.',
+        'Preventive Guardrail: Share the permanent checklist you created so that error never recurred.'
+      ]
+    },
+    {
+      cat: 'HR 5-Year Career Vision',
+      qTpl: 'Where do you see yourself 5 years from now if you join {COMPANY}, and how does this role fit your long-term career roadmap?',
+      kw: ['5 years', 'graduate engineer', 'lead', 'expert', 'design', 'contribute', 'long-term', 'growth'],
+      points: [
+        'Years 1–2 (Mastery): Master {COMPANY}’s engineering standards, product lifecycle, and shop-floor/CAE workflows as a high-performing GET.',
+        'Years 3–5 (Technical Leadership): Grow into a Senior Mechanical Engineer / Module Lead mentoring juniors and driving cost, weight, or efficiency improvements.',
+        'Commitment: Emphasize building a long-term career within {COMPANY}.'
+      ]
+    },
+    {
+      cat: 'HR Adaptability, Relocation & Compensation',
+      qTpl: 'Are you comfortable adapting to new CAD/PLM software tools, working across shifts or relocating to {COMPANY}’s hubs, and what are your salary expectations?',
+      kw: ['adaptable', 'relocate', 'flexible', 'learn', 'software', 'salary', 'standard', 'growth'],
+      points: [
+        'Tool & Location Agility: Point out that you already work across Creo, Siemens NX, SolidWorks, CATIA, and ANSYS, so learning any proprietary PLM/ERP tool is fast, and you are fully open to relocating.',
+        'Balanced Salary Answer: State that learning, mentorship, and impactful engineering work come first, and you are comfortable with {COMPANY}’s standard campus GET compensation structure.'
+      ]
+    }
+  ];
+
+  // Self-Generating Group Discussion (GD) Topics Pool (20+ Dynamic Campus GD Cases)
+  const SELF_GEN_GD_TOPICS_POOL = [
+    {
+      topic: 'EVs vs Hydrogen IC Engines & Hybrids for India’s 2030 Mobility',
+      prompt: '[Self-Generated GD Case] "Should India bet 100% on Battery Electric Vehicles (BEVs) or pursue a multi-pathway strategy including Hydrogen Internal Combustion, Flex-Fuel Biofuels, and Strong Hybrids?" — Present your opening stance, 2 technical/economic facts, and a consensus conclusion.',
+      kw: ['ev', 'battery', 'hydrogen', 'hybrid', 'grid', 'energy density', 'charging', 'emissions', 'balance'],
+      points: [
+        'Opening Hook: Frame the problem by vehicle segment—2/3-wheelers and city cars suit BEVs, whereas long-haul trucks, buses, and off-highway equipment need hydrogen or hybrids due to battery weight and charging downtime.',
+        'Technical & Lifecycle Facts: Compare well-to-wheel CO₂ emissions, lithium/cobalt import dependency vs domestic green hydrogen and ethanol blending.',
+        'Collaborative Conclusion: Propose a pragmatic multi-fuel transition where grid greening and localized battery/electrolyzer manufacturing advance together.'
+      ]
+    },
+    {
+      topic: 'Generative AI & Automation in Core Mechanical Engineering',
+      prompt: '[Self-Generated GD Case] "Will AI-driven Generative Design, automated FEA, and lights-out CNC factories reduce the need for core mechanical engineers, or make first-principles engineers more valuable than ever?" — Deliver your GD speech.',
+      kw: ['ai', 'automation', 'generative design', 'fea', 'cnc', 'first principles', 'safety', 'productivity', 'upskill'],
+      points: [
+        'Clear Thesis: AI automates repetitive drafting and meshing, but it cannot take legal or physical responsibility for pressure-vessel safety, fatigue life, or shop-floor manufacturability.',
+        'Industrial Evidence: Generative CAD produces organic shapes that still require a mechanical engineer to verify Von Mises stress, GD&T datum schemes, and DFM/DFA cost.',
+        'Consensus Summary: Engineers who pair strong SOM/Thermo/Design fundamentals with AI simulation tools will lead Industry 4.0.'
+      ]
+    },
+    {
+      topic: 'Make in India & Semiconductor / Defence Manufacturing Self-Reliance',
+      prompt: '[Self-Generated GD Case] "Can India transition from a service-led economy to a global precision-manufacturing powerhouse in Aerospace, Defence, Semiconductors, and Heavy Machinery?" — Share your structured GD points.',
+      kw: ['make in india', 'manufacturing', 'supply chain', 'aerospace', 'defence', 'pli', 'quality', 'r&d', 'export'],
+      points: [
+        'Strategic Context: Highlight PLI schemes, indigenous defence platforms (HAL, DRDO, BEML, L&T), and global China+1 supply-chain diversification.',
+        'Key Engineering Bottlenecks to Solve: Precision machine tools, specialty alloys, MSME quality control (Cp/Cpk ≥ 1.33), and industry-academia R&D partnerships.',
+        'Balanced Conclusion: Combining India’s software/CAE talent with high-precision shop-floor manufacturing creates an unbeatable global edge.'
+      ]
+    },
+    {
+      topic: 'Quality (Six Sigma / Zero Defect) vs Speed-to-Market in Product Launches',
+      prompt: '[Self-Generated GD Case] "In a hyper-competitive market, should engineering companies prioritize rapid product launches and iterate later, or enforce strict Six Sigma zero-defect validation before release?" — Lead the discussion.',
+      kw: ['quality', 'six sigma', 'speed', 'safety', 'recall', 'cost', 'fmea', 'testing', 'trust'],
+      points: [
+        'Distinguish Software vs Hardware: While software can be patched overnight via OTA updates, a mechanical failure in brakes, boilers, or aircraft costs lives and billions in recalls.',
+        'Engineering Solution (Concurrent Engineering): Use Digital Twins, DFMEA, and accelerated life testing to compress validation time without cutting safety margins.',
+        'Summary: Never compromise safety-critical reliability; achieve speed through modular design and simulation.'
+      ]
+    },
+    {
+      topic: 'Renewable Energy Transition vs Baseload Thermal & Nuclear Power for Indian Industry',
+      prompt: '[Self-Generated GD Case] "How can heavy manufacturing plants (steel, cement, tyres, automotive) achieve Net-Zero carbon targets without suffering power intermittency or losing cost competitiveness?" — Present your GD analysis.',
+      kw: ['renewable', 'solar', 'wind', 'baseload', 'nuclear', 'boiler', 'waste heat', 'efficiency', 'storage'],
+      points: [
+        'Industrial Reality: Heavy process plants require 24×7 uninterrupted process steam and electrical baseload that solar/wind alone cannot guarantee without storage.',
+        'Plant-Level Engineering levers: Waste heat recovery (economizers, air preheaters), biomass co-firing, multi-stage compressor intercooling, and captive green-energy microgrids.',
+        'Conclusion: Pair aggressive plant energy-efficiency upgrades today with phased nuclear/pumped-storage/green-hydrogen adoption.'
+      ]
+    },
+    {
+      topic: 'Startups vs Established Core MNCs: Best Launchpad for Engineering Freshers?',
+      prompt: '[Self-Generated GD Case] "Should a graduating mechanical engineer join a fast-paced hardware/deep-tech startup for broad ownership, or a legacy OEM/MNC for structured GET training and standardized systems?" — Share both sides and conclude.',
+      kw: ['startup', 'mnc', 'oem', 'learning', 'ownership', 'process', 'mentorship', 'risk', 'career'],
+      points: [
+        'Startup Advantage: End-to-end ownership from CAD concept to prototyping, vendor negotiation, and testing within months.',
+        'MNC / OEM Advantage: World-class GD&T, PLM, Six Sigma quality systems, structured GET rotations, and senior mentorship.',
+        'Balanced Synthesis: Both paths succeed if the engineer focuses on mastering fundamentals, documenting impact, and staying adaptable.'
+      ]
+    },
+    {
+      topic: 'Additive Manufacturing (3D Printing) vs Conventional Subtractive & Forming Processes',
+      prompt: '[Self-Generated GD Case] "Will Metal & Polymer 3D Printing replace conventional casting, forging, and CNC machining, or remain a complementary niche?" — Present your technical GD argument.',
+      kw: ['3d printing', 'additive', 'casting', 'forging', 'cnc', 'batch size', 'topology', 'grain flow', 'cost'],
+      points: [
+        'Where Additive Wins: Complex internal cooling channels, aerospace topology-optimized brackets, rapid prototyping, and low-volume medical implants.',
+        'Where Forging & CNC Win: High-volume unit cost, superior directional grain flow and fatigue strength in forged shafts/gears, and tight surface finish Ra.',
+        'Conclusion: Hybrid manufacturing—additive near-net shape followed by precision CNC finish machining—is the industrial sweet spot.'
+      ]
+    },
+    {
+      topic: 'Skill-Based Practical Assessments vs CGPA Filters in Campus Placements',
+      prompt: '[Self-Generated GD Case] "Should engineering recruiters shortlist candidates primarily on academic CGPA or on hands-on CAD/coding/troubleshooting portfolios and practical projects?" — Moderate and conclude.',
+      kw: ['cgpa', 'skills', 'portfolio', 'project', 'consistency', 'practical', 'assessment', 'balance'],
+      points: [
+        'What CGPA Reflects: Long-term discipline, grasp of core engineering mathematics/thermodynamics across 8 semesters, and consistency.',
+        'What Projects & Portfolios Reflect: Ability to apply formulas to real ambiguous problems (like designing a UAV wing or solving AGV traction torque).',
+        'Consensus Recommendation: A baseline academic threshold combined with a practical technical + behavioral evaluation gives the fairest hiring outcome.'
+      ]
+    }
+  ];
+
   function generateSelfGeneratingInterviewSet(count = 5) {
     const iv = state.interviewState;
-    const track = iv.track;
-    const curatedPool = [];
+    const targetCount = Math.max(1, Number(count || iv.sessionQuestionCount || 5));
+    const companyName = iv.company || 'SJCE Placement Drive Recruiter';
 
-    if (iv.roundMode === 'hr') {
-      (AI_INTERVIEW_QUESTION_BANK['Separate HR & Behavioral Interview Round (40 Questions · upGrad & Playlist)'] || []).forEach(item => curatedPool.push(item));
-    } else if (iv.roundMode === 'gd') {
-      (AI_INTERVIEW_QUESTION_BANK['Group Discussion (GD) Round Simulator & Campus GD Topics'] || []).forEach(item => curatedPool.push(item));
-    } else {
+    // 1. SELF-GENERATING HR INTERVIEW MODE
+    if (iv.roundMode === 'hr' || iv.track.includes('Separate HR')) {
+      const baseHr = (AI_INTERVIEW_QUESTION_BANK['Separate HR & Behavioral Interview Round (40 Questions · upGrad & Playlist)'] || []).slice();
+      const dynamicHr = SELF_GEN_HR_TEMPLATES
+        .slice()
+        .sort(() => Math.random() - 0.5)
+        .map((tpl, idx) => ({
+          q: `[Self-Generated HR Q${idx + 1} · ${tpl.cat}] ` + tpl.qTpl.replace(/\{COMPANY\}/g, companyName),
+          keywords: tpl.kw,
+          idealPoints: tpl.points.map(p => p.replace(/\{COMPANY\}/g, companyName)),
+          studyTopic: `HR Interview — ${tpl.cat}`,
+          studyGuideQuery: 'Technical Test Review',
+          subjectId: 'aptitude',
+          formula: 'STAR Method: Situation → Task → Action → Quantified Result'
+        }));
+
+      const mergedHr = dynamicHr.concat(baseHr).sort(() => Math.random() - 0.5);
+      iv.generatedQuestions = mergedHr.slice(0, targetCount);
+    }
+    // 2. SELF-GENERATING GROUP DISCUSSION (GD) MODE
+    else if (iv.roundMode === 'gd' || iv.track.includes('Group Discussion')) {
+      const baseGd = (AI_INTERVIEW_QUESTION_BANK['Group Discussion (GD) Round Simulator & Campus GD Topics'] || []).slice();
+      const dynamicGd = SELF_GEN_GD_TOPICS_POOL
+        .slice()
+        .sort(() => Math.random() - 0.5)
+        .map((item) => ({
+          q: item.prompt,
+          keywords: item.kw,
+          idealPoints: item.points,
+          studyTopic: `Group Discussion: ${item.topic}`,
+          studyGuideQuery: 'Inline-6',
+          subjectId: 'thermo',
+          formula: 'GD Structure: 30s Hook + 2 Quantified Facts + Peer Bridge + Consensus Summary'
+        }));
+
+      const mergedGd = dynamicGd.concat(baseGd).sort(() => Math.random() - 0.5);
+      iv.generatedQuestions = mergedGd.slice(0, targetCount);
+    }
+    // 3. SELF-GENERATING TECHNICAL / MIXED MODE (HONORS DIFFICULTY BASIC/INTER/ADV + CORE/APTITUDE SLIDER)
+    else {
+      const track = iv.track;
+      const diffFilter = iv.difficulty || 'all';
+      const corePct = iv.coreSliderPct ?? 80;
+      const curatedPool = [];
       Object.entries(AI_INTERVIEW_QUESTION_BANK).forEach(([tName, arr]) => {
+        if (tName.includes('Separate HR') || tName.includes('Group Discussion')) return;
         if (track === 'Self-Generated Mixed Core + Aptitude (Like Mock Test)' || tName === track) {
-          arr.forEach(item => curatedPool.push(Object.assign({}, item, { sourceTrack: tName })));
+          arr.forEach(item => curatedPool.push(Object.assign({ difficulty: 'Intermediate' }, item, { sourceTrack: tName })));
         }
       });
-    }
 
-    // Also pull dynamic questions from state.questions when in technical or mixed mode
-    let combinedPool = curatedPool.slice();
-    if (iv.roundMode !== 'hr' && iv.roundMode !== 'gd') {
-      const dynamicCandidates = state.questions.filter(q => q && q.text && q.text.length > 25 && q.explain);
-      const shuffledDyn = dynamicCandidates.slice().sort(() => Math.random() - 0.5).slice(0, Math.max(6, count * 2));
+      const basePool = state.questions.filter(q => q && q.text && q.text.length > 25 && q.explain);
+      const diffMatched = (diffFilter === 'all' || !['Basic', 'Intermediate', 'Advanced'].includes(diffFilter))
+        ? basePool
+        : basePool.filter(q => String(q.difficulty || 'Intermediate').toLowerCase() === diffFilter.toLowerCase());
+      const activePool = diffMatched.length >= targetCount ? diffMatched : basePool;
+
+      const coreCandidates = activePool.filter(q => !/aptitude|logical|verbal|train/i.test(q.topic)).sort(() => Math.random() - 0.5);
+      const aptCandidates = activePool.filter(q => /aptitude|logical|verbal|train/i.test(q.topic)).sort(() => Math.random() - 0.5);
+      const wantCore = Math.round(Math.max(8, targetCount * 2) * (corePct / 100));
+      const wantApt = Math.max(8, targetCount * 2) - wantCore;
+      const shuffledDyn = coreCandidates.slice(0, wantCore).concat(aptCandidates.slice(0, wantApt));
       const synthesizedViva = shuffledDyn.map(q => {
         const cleanPrompt = String(q.text).replace(/<[^>]+>/g, '').trim();
         const cleanExplain = String(q.explain || '').replace(/<[^>]+>/g, '').trim();
@@ -6601,10 +7082,11 @@ function formatReadableSyllabus(rawText) {
           formula: cleanExplain.slice(0, 120) || 'Apply governing SI equation'
         };
       });
-      combinedPool = curatedPool.concat(synthesizedViva);
+
+      const combinedPool = curatedPool.concat(synthesizedViva).sort(() => Math.random() - 0.5);
+      iv.generatedQuestions = combinedPool.slice(0, targetCount);
     }
 
-    iv.generatedQuestions = combinedPool.slice(0, Math.max(1, Number(count || iv.sessionQuestionCount || 5)));
     iv.sessionQuestionCount = iv.generatedQuestions.length;
     iv.qIndex = 0;
     iv.sessionScores = {};
@@ -7137,6 +7619,8 @@ function formatReadableSyllabus(rawText) {
                 </div>
               </div>
 
+              ${renderEmailReportDropBoxHtml('iv-rep', iv.reportEmail || 'sgirish2106@gmail.com', 'Drop AI Interview (Technical / HR / GD) Report to sgirish2106@gmail.com')}
+
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div class="p-3 rounded-xl bg-slate-800 border border-slate-700">
                   <div class="text-[10px] font-bold uppercase text-slate-400">Total Interview Time</div>
@@ -7183,6 +7667,25 @@ function formatReadableSyllabus(rawText) {
             </div>
           </div>
         `;
+        bindEmailReportDropBoxEvents('iv-rep', {
+          email: iv.reportEmail || 'sgirish2106@gmail.com',
+          title: `Gemini Live ${iv.roundMode.toUpperCase()} Interview (${iv.company})`,
+          difficulty: iv.difficulty || 'All Levels',
+          corePct: iv.coreSliderPct ?? 80,
+          scorePct: avgSessionScore,
+          scoreDetail: `${answeredIndices.length}/${trackQuestions.length} Questions Answered (${verdict})`,
+          totalTimeStr: `${Math.floor(totalIntSec / 60)}m ${totalIntSec % 60}s`,
+          avgTimeStr: `${avgIntSec}s/Q`,
+          warnings: state.proctorState.warningCount,
+          items: trackQuestions.map((qIt, idx) => ({
+            topic: qIt.studyTopic,
+            difficulty: iv.difficulty || 'Standard',
+            timeSec: iv.sessionTimings[idx] || 0,
+            status: `Score ${iv.sessionScores[idx] ?? 0}/100`,
+            prompt: String(qIt.q).slice(0, 110)
+          }))
+        }, (val) => { iv.reportEmail = val; });
+
         document.getElementById('iv-regenerate-new-set-btn')?.addEventListener('click', () => {
           generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
           enterInterviewFullscreen(false);
@@ -7254,27 +7757,41 @@ function formatReadableSyllabus(rawText) {
 
           <!-- Unified Combined Voice + Text Interview Question & Answer Console -->
           <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-6 shadow-2xl space-y-4">
-            <!-- Round Mode Pills (Technical / HR / GD) + Track Switcher -->
-            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
-              <div class="flex flex-wrap gap-1.5">
-                ${[
-                  ['technical', '⚙️ Technical Round'],
-                  ['hr', '🤝 Separate HR Round (40 Qs)'],
-                  ['gd', '🗣️ Group Discussion (GD) Round']
-                ].map(([mKey, mLbl]) => `
-                  <button type="button" data-iv-round-mode="${mKey}" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${iv.roundMode === mKey ? 'bg-blue-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
-                    ${mLbl}
+            <!-- Round Mode Pills (Self-Generating Technical / HR / GD) + Difficulty (Basic/Inter/Adv) + Core/Aptitude Slider -->
+            <div class="space-y-3 pb-3 border-b border-slate-200">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex flex-wrap gap-1.5">
+                  ${[
+                    ['technical', '⚙️ Self-Gen Technical Interview'],
+                    ['hr', '🤝 Self-Gen HR Interview (40+ Qs)'],
+                    ['gd', '🗣️ Self-Gen Group Discussion (GD)']
+                  ].map(([mKey, mLbl]) => `
+                    <button type="button" data-iv-round-mode="${mKey}" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${iv.roundMode === mKey ? 'bg-blue-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                      ${mLbl}
+                    </button>
+                  `).join('')}
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                  <select id="iv-room-diff-select" class="px-2.5 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white text-slate-900" title="Difficulty Level">
+                    <option value="all" ${iv.difficulty === 'all' ? 'selected' : ''}>Difficulty: All Levels</option>
+                    <option value="Basic" ${iv.difficulty === 'Basic' ? 'selected' : ''}>🟢 Basic</option>
+                    <option value="Intermediate" ${iv.difficulty === 'Intermediate' ? 'selected' : ''}>🟡 Intermediate</option>
+                    <option value="Advanced" ${iv.difficulty === 'Advanced' ? 'selected' : ''}>🔴 Advanced</option>
+                  </select>
+                  <button type="button" id="iv-prev-q-btn" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-800">
+                    ← Prev
                   </button>
-                `).join('')}
+                  <button type="button" id="iv-next-q-btn" class="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold">
+                    Next (${iv.qIndex + 1}/${trackQuestions.length}) →
+                  </button>
+                </div>
               </div>
 
-              <div class="flex items-center gap-2">
-                <button type="button" id="iv-prev-q-btn" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-800">
-                  ← Prev
-                </button>
-                <button type="button" id="iv-next-q-btn" class="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold">
-                  Next (${iv.qIndex + 1}/${trackQuestions.length}) →
-                </button>
+              <!-- Live Core vs Aptitude Controlling Slider inside Interview Room -->
+              <div class="px-3.5 py-2 rounded-xl bg-slate-100 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <span class="font-bold text-slate-700">🎚️ Core Mechanical vs Aptitude Mix: <b id="iv-room-slider-lbl" class="text-blue-700">${iv.coreSliderPct ?? 80}% Core / ${100 - (iv.coreSliderPct ?? 80)}% Aptitude</b></span>
+                <input id="iv-room-core-slider" type="range" min="0" max="100" step="5" value="${iv.coreSliderPct ?? 80}" class="w-full sm:w-56 accent-blue-600 cursor-pointer">
               </div>
             </div>
 
@@ -7283,6 +7800,9 @@ function formatReadableSyllabus(rawText) {
               <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-blue-300">
                 <span class="font-extrabold">🎙️ GEMINI INTERVIEWER · QUESTION ${iv.qIndex + 1} OF ${trackQuestions.length} (${escapeHtml(activeQ.studyTopic)})</span>
                 <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" id="iv-inline-self-gen-btn" class="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs transition">
+                    🎲 Self-Generate New ${iv.roundMode === 'hr' ? 'HR Question' : iv.roundMode === 'gd' ? 'GD Topic' : 'Tech Question'}
+                  </button>
                   <button type="button" id="iv-speak-q-btn" class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">
                     🔊 Speak Question
                   </button>
@@ -7526,6 +8046,35 @@ function formatReadableSyllabus(rawText) {
               </button>
             </div>
           </div>
+
+          <!-- Difficulty (Basic / Inter / Adv) + Core vs Aptitude Slider + Report Drop Email Box (sgirish2106@gmail.com) -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 pt-3 border-t border-slate-200 items-center">
+            <div>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-diff-select">Difficulty Level (Basic / Inter / Adv)</label>
+              <select id="iv-hub-diff-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white text-blue-950">
+                <option value="all" ${iv.difficulty === 'all' ? 'selected' : ''}>All Levels (Balanced Basic + Inter + Adv)</option>
+                <option value="Basic" ${iv.difficulty === 'Basic' ? 'selected' : ''}>🟢 Basic (Foundation Concepts)</option>
+                <option value="Intermediate" ${iv.difficulty === 'Intermediate' ? 'selected' : ''}>🟡 Intermediate (GET &amp; Numericals)</option>
+                <option value="Advanced" ${iv.difficulty === 'Advanced' ? 'selected' : ''}>🔴 Advanced (Deep Design &amp; AGV/FEA)</option>
+              </select>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-900 text-white space-y-1">
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="font-bold text-amber-400">🎚️ Core vs Aptitude Slider</span>
+                <span id="iv-hub-slider-lbl" class="font-extrabold text-blue-200">${iv.coreSliderPct ?? 80}% Core / ${100 - (iv.coreSliderPct ?? 80)}% Apt</span>
+              </div>
+              <input id="iv-hub-core-slider" type="range" min="0" max="100" step="5" value="${iv.coreSliderPct ?? 80}" class="w-full accent-blue-500 cursor-pointer">
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-report-email">📧 Performance Report Drop Email</label>
+              <div class="flex gap-1.5">
+                <input id="iv-hub-report-email" type="email" value="${escapeHtml(iv.reportEmail || 'sgirish2106@gmail.com')}" placeholder="sgirish2106@gmail.com" class="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono">
+                <button type="button" id="iv-hub-drop-email-btn" class="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shrink-0">
+                  📧 Drop Report ↗
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- 2. TECHNICAL TEST REVIEW & FORMULA SCORECARD (YOUR 10 ANSWERED + 8 NUMERICAL QUESTIONS) -->
@@ -7729,7 +8278,7 @@ function formatReadableSyllabus(rawText) {
     document.getElementById('launch-gd-iv-btn')?.addEventListener('click', () => {
       iv.roundMode = 'gd';
       iv.track = 'Group Discussion (GD) Round Simulator & Campus GD Topics';
-      generateSelfGeneratingInterviewSet(2);
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
       enterInterviewFullscreen(false);
     });
     document.getElementById('iv-launch-fs-mic-btn')?.addEventListener('click', () => {
@@ -7748,6 +8297,49 @@ function formatReadableSyllabus(rawText) {
     });
     document.getElementById('iv-hub-persona-select')?.addEventListener('change', (e) => {
       iv.voicePersona = e.target.value;
+    });
+    document.getElementById('iv-hub-diff-select')?.addEventListener('change', (e) => {
+      iv.difficulty = e.target.value;
+      state.mockExam.difficultyFilter = e.target.value;
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+    });
+    document.getElementById('iv-hub-core-slider')?.addEventListener('input', (e) => {
+      const v = Number(e.target.value ?? 80);
+      iv.coreSliderPct = v;
+      state.mockExam.coreSliderPct = v;
+      const lbl = document.getElementById('iv-hub-slider-lbl');
+      if (lbl) lbl.textContent = `${v}% Core / ${100 - v}% Apt`;
+    });
+    document.getElementById('iv-hub-report-email')?.addEventListener('input', (e) => {
+      iv.reportEmail = e.target.value.trim() || 'sgirish2106@gmail.com';
+      state.mockExam.reportEmail = iv.reportEmail;
+    });
+    document.getElementById('iv-hub-drop-email-btn')?.addEventListener('click', () => {
+      const targetEmail = document.getElementById('iv-hub-report-email')?.value?.trim() || 'sgirish2106@gmail.com';
+      iv.reportEmail = targetEmail;
+      const qs = getActiveInterviewQuestions();
+      const bodyText = buildPlainTextReportSummary({
+        email: targetEmail,
+        title: `MechPrep v5 Readiness & Technical Test Review Report (${iv.company})`,
+        difficulty: iv.difficulty || 'All Levels',
+        corePct: iv.coreSliderPct ?? 80,
+        scorePct: state.progress.bestScore || 75,
+        scoreDetail: `Tests Completed: ${state.progress.testsCompleted} | Total Practice Attempts: ${state.progress.attempts}`,
+        totalTimeStr: `${Math.floor((iv.totalInterviewSec || 120) / 60)}m ${(iv.totalInterviewSec || 120) % 60}s`,
+        avgTimeStr: '30s/Q',
+        warnings: state.proctorState.warningCount,
+        items: qs.map((qIt, idx) => ({
+          topic: qIt.studyTopic,
+          difficulty: iv.difficulty || 'Standard',
+          timeSec: iv.sessionTimings[idx] || 0,
+          status: iv.sessionScores[idx] !== undefined ? `Score ${iv.sessionScores[idx]}/100` : 'READY TO PRACTICE',
+          prompt: String(qIt.q).slice(0, 110)
+        }))
+      });
+      const subject = `MechPrep v5 Placement & Interview Report — Girish S`;
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(targetEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+      window.open(gmailUrl, '_blank', 'noopener,noreferrer');
+      showToast(`Opened Gmail report compose for ${targetEmail}!`, 'success');
     });
 
     document.getElementById('portal-search-input')?.addEventListener('input', (e) => {
@@ -7781,9 +8373,33 @@ function formatReadableSyllabus(rawText) {
       renderPlacementPrep();
       speakInterviewText(`Hi Girish! I'm now speaking in ${iv.voicePersona === 'gemini-live' ? 'Gemini Live conversational' : iv.voicePersona} mode.`);
     });
+    document.getElementById('iv-room-diff-select')?.addEventListener('change', (e) => {
+      iv.difficulty = e.target.value;
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+      renderPlacementPrep();
+      showToast(`Self-generated ${iv.difficulty} level ${iv.roundMode.toUpperCase()} questions!`, 'success');
+    });
+    document.getElementById('iv-room-core-slider')?.addEventListener('input', (e) => {
+      const v = Number(e.target.value ?? 80);
+      iv.coreSliderPct = v;
+      const lbl = document.getElementById('iv-room-slider-lbl');
+      if (lbl) lbl.textContent = `${v}% Core / ${100 - v}% Aptitude`;
+    });
+    document.getElementById('iv-room-core-slider')?.addEventListener('change', () => {
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+      renderPlacementPrep();
+      showToast(`Updated Core/Aptitude mix to ${iv.coreSliderPct}% Core / ${100 - iv.coreSliderPct}% Aptitude!`, 'success');
+    });
     document.getElementById('iv-browser-voice-select')?.addEventListener('change', (e) => {
       iv.selectedVoiceURI = e.target.value;
       speakInterviewText(`Audio voice updated for your interview.`);
+    });
+    document.getElementById('iv-inline-self-gen-btn')?.addEventListener('click', () => {
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+      renderPlacementPrep();
+      const qs = getActiveInterviewQuestions();
+      if (iv.autoSpeak && qs[0]) speakInterviewText(qs[0].q);
+      showToast(`Self-generated a fresh ${iv.roundMode.toUpperCase()} interview question set!`, 'success');
     });
     document.getElementById('iv-speak-q-btn')?.addEventListener('click', () => {
       speakInterviewText(`Question ${iv.qIndex + 1} for ${iv.company}. ${activeQ.q}`);
