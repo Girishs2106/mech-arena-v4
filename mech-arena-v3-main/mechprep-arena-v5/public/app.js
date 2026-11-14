@@ -5762,6 +5762,17 @@ function formatReadableSyllabus(rawText) {
       logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#065F46"/><text x="28" y="33" text-anchor="middle" fill="#A7F3D0" font-size="14" font-weight="900" font-family="Inter,sans-serif">NATS</text></svg>`
     },
     {
+      id: 'pm-internship',
+      name: 'PM Internship Scheme (Ministry of Corporate Affairs)',
+      shortCode: 'PMIS',
+      url: 'https://pminternship.mca.gov.in/',
+      category: '2. NATS, Prosple & General Portals',
+      location: 'Ministry of Corporate Affairs, Govt. of India (Top 500 Companies)',
+      roles: '12-Month Paid Internships in Top 500 Indian Manufacturing, Automotive, Energy & Engineering Companies (₹5,000/mo Stipend + ₹6,000 Grant)',
+      badge: 'GOVT. PM INTERNSHIP PORTAL',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#EA580C"/><rect x="6" y="6" width="44" height="44" rx="10" fill="none" stroke="#FED7AA" stroke-width="1.5"/><text x="28" y="27" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="900" font-family="Inter,sans-serif">PM</text><text x="28" y="40" text-anchor="middle" fill="#FFEDD5" font-size="9" font-weight="800" font-family="Inter,sans-serif">INTERN</text></svg>`
+    },
+    {
       id: 'naukri',
       name: 'Naukri.com (Engineering & Campus Hub)',
       shortCode: 'N',
@@ -7580,7 +7591,7 @@ function formatReadableSyllabus(rawText) {
             <span class="text-xs text-slate-400">Click any icon to launch the official portal directly ↗</span>
           </div>
           <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 gap-3 text-center">
-            ${OFFICIAL_JOB_PORTALS.slice(0, 31).map(p => `
+            ${OFFICIAL_JOB_PORTALS.slice(0, 32).map(p => `
               <a href="${escapeHtml(p.url)}" target="_blank" rel="noopener noreferrer" class="group p-2.5 rounded-2xl bg-slate-800/90 hover:bg-blue-950 border border-slate-700 hover:border-blue-500 transition flex flex-col items-center gap-2">
                 ${p.logoSvg}
                 <span class="text-[11px] font-bold text-slate-200 group-hover:text-white leading-tight line-clamp-2">${escapeHtml(p.name.split(' (')[0])}</span>
