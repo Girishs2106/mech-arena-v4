@@ -4620,30 +4620,76 @@ function formatReadableSyllabus(rawText) {
   // + USER TECHNICAL TEST REVIEW & DRIVE 250-Q INJECTION
   // ==========================================================================
   function applyHeaderOverflowFixAndValidateData() {
-    if (typeof document !== 'undefined' && !document.getElementById('v5-layout-bugfix-style')) {
-      const st = document.createElement('style');
-      st.id = 'v5-layout-bugfix-style';
-      st.textContent = `
-        #app-topbar {
-          display: flex !important;
-          flex-wrap: wrap !important;
-          align-items: center !important;
-          justify-content: space-between !important;
-          gap: 0.5rem 0.75rem !important;
-          width: 100% !important;
-          max-width: 100vw !important;
-          box-sizing: border-box !important;
-        }
-        #app-topbar > div {
-          min-width: 0 !important;
-          max-width: 100% !important;
-        }
-        #module-container h1, #module-container h2, #module-container h3 {
-          overflow-wrap: anywhere !important;
-          word-break: break-word !important;
-        }
-      `;
-      document.head.appendChild(st);
+    if (typeof document !== 'undefined') {
+      // Fix #app-topbar and #app-sidebar z-index & sticky positioning so sidebar NEVER overlaps the top header bar
+      const topbarEl = document.getElementById('app-topbar');
+      const sidebarEl = document.getElementById('app-sidebar');
+      if (topbarEl) {
+        topbarEl.classList.remove('z-30');
+        topbarEl.classList.add('z-50');
+      }
+      if (sidebarEl) {
+        sidebarEl.classList.remove('z-40', 'inset-y-0');
+        sidebarEl.classList.add('z-20');
+      }
+
+      if (!document.getElementById('v5-layout-bugfix-style')) {
+        const st = document.createElement('style');
+        st.id = 'v5-layout-bugfix-style';
+        st.textContent = `
+          #app-topbar {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 60 !important;
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 0.5rem 0.75rem !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            min-height: 60px !important;
+            box-sizing: border-box !important;
+          }
+          #app-topbar > div {
+            min-width: 0 !important;
+            max-width: 100% !important;
+          }
+          /* Ensure left sidebar never overlaps #app-topbar on desktop or mobile scroll */
+          #app-sidebar {
+            z-index: 30 !important;
+            top: 60px !important;
+            height: calc(100vh - 60px) !important;
+            max-height: calc(100vh - 60px) !important;
+            overflow-y: auto !important;
+          }
+          @media (min-width: 1024px) {
+            #app-sidebar {
+              position: sticky !important;
+              top: 60px !important;
+              height: calc(100vh - 60px) !important;
+              max-height: calc(100vh - 60px) !important;
+              z-index: 20 !important;
+              transform: none !important;
+            }
+          }
+          @media (max-width: 1023px) {
+            #app-sidebar {
+              position: fixed !important;
+              top: 60px !important;
+              bottom: 0 !important;
+              left: 0 !important;
+              height: calc(100vh - 60px) !important;
+              z-index: 50 !important;
+            }
+          }
+          #module-container h1, #module-container h2, #module-container h3 {
+            overflow-wrap: anywhere !important;
+            word-break: break-word !important;
+          }
+        `;
+        document.head.appendChild(st);
+      }
     }
 
     if (state._v5TechnicalTestReviewInjected) return;
