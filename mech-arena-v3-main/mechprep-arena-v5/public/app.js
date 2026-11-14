@@ -136,6 +136,24 @@
         'Master_Technical_5000Q_Aptitude_2000Q_Compendium_4000Pages.pdf',
         'TimeTooth_Technologies_Level_I_Mechanical_Questionnaire.pdf'
       ]
+    },
+    {
+      id: '1SM7dWs5dUmj_sY3BiK_5MsPlQL5njm2b',
+      name: 'SJCE Placement Voice Recordings & 250-Q Technical/Aptitude Drive',
+      semester: 'Placement & Voice Viva',
+      category: 'Voice & Test Prep',
+      url: 'https://drive.google.com/drive/folders/1SM7dWs5dUmj_sY3BiK_5MsPlQL5njm2b?usp=drive_link',
+      expectedSubjects: [
+        'Call amrutha Sjce_261114_170650.m4a (SJCE Placement Viva & HR Call Log)',
+        'Call Shashank V Sjce_261114_142326.m4a (Technical Assessment Discussion)',
+        'Call Suhas Sjce_261114_134251.m4a & Call Omkar Sjce_261028_175052.m4a',
+        'Call Surya Sjce_261028_182308.m4a & Call Ravi Sjce 2_261029_191801.m4a',
+        'Copy of Strength_of_Materials_50_Aptitude_Questions-1-4.pdf',
+        'Copy of Machine_Design_Aptitude_Test_50_Questions-1-7.pdf',
+        'Copy of Manufacturing_Process_Aptitude_Test_50_Questions-1-8.pdf',
+        'Copy of Industrial_Engineering_Basics_Aptitude_Test_50_Questions-1-3.pdf',
+        'Copy of Thermodynamics.pdf & Copy of QA & LR Trainer Handout V3.pdf'
+      ]
     }
   ];
 
@@ -238,38 +256,50 @@
     aptFilter: { search: '', topic: 'all', difficulty: 'all', page: 1 },
     guideFilter: { search: '', source: 'all', page: 1 },
     formulaSearch: '',
-    // Active Mock Exam state (Version 5 Proctored + Job Process)
+    // Active Mock Exam state (Version 5: 3-Warning Auto-End, Timing Tracker & Camera Toggle)
     mockExam: {
       active: false,
       finished: false,
+      terminatedByProctor: false,
+      TerminationReason: '',
+      showExitConfirmModal: false,
       jobProcessMode: false,
       proctoringEnabled: true,
+      geminiVoiceHelper: true,
       title: 'Mechanical Engineering & Placement Mock Exam (v5 Proctored)',
       questions: [],
       answers: {},
+      questionTimings: {},
+      totalElapsedSec: 0,
       reviewFlags: {},
       currentIndex: 0,
       remainingSec: 1200,
+      initialDurationSec: 1200,
       timerId: null,
       shortMarks: 2,
       problemMarks: 4,
       negativeMarking: true,
       warnings: 0,
-      maxWarnings: 5,
+      maxWarnings: 3,
       warningLog: [],
       lastWarningReason: '',
       lastResult: null
     },
-    // Shared Webcam Face & Motion Proctoring State (v5)
+    // Shared Webcam Face & Motion Proctoring State (v5: Strict 3-Warning Limit)
     proctorState: {
+      cameraEnabled: true,
       cameraActive: false,
+      warmupUntil: 0,
       faceDetected: true,
       motionPct: 2,
       statusText: '✓ Face Centered · Low Motion',
       missingFrames: 0,
       highMotionFrames: 0,
       warningCount: 0,
-      maxWarnings: 5,
+      maxWarnings: 3,
+      bannerVisible: false,
+      showExitModal: false,
+      terminatedByLimit: false,
       lastAlert: '',
       events: []
     },
@@ -280,16 +310,20 @@
       subjectFilter: 'all',
       masteredIds: safeGetStorage('mechprep_v4_fc_mastered', [])
     },
-    // AI Interview Taker & Job Portal state (Version 5: Selectable Audio, Human Face Motion, Self-Generating Mock Interview & Proctoring)
+    // AI Interview, HR & GD Taker State (Human-Like Gemini Assistant + Camera Toggle + Timing Report)
     interviewState: {
       activeFullscreen: false,
       sessionFinished: false,
+      terminatedByProctor: false,
+      showExitConfirmModal: false,
+      roundMode: 'technical', // 'technical' | 'hr' | 'gd' | 'mixed'
       jobProcessStage: 2,
       autoSpeak: true,
-      autoListenAfterSpeak: false,
+      autoListenAfterSpeak: true,
+      geminiLiveMode: true,
       proctoringEnabled: true,
       selectedVoiceURI: 'auto-in',
-      voicePersona: 'male-panel',
+      voicePersona: 'gemini-live',
       speechRate: 1.0,
       speechPitch: 1.0,
       isListening: false,
@@ -297,19 +331,22 @@
       mouthPhase: 0,
       blinkState: false,
       headTilt: 0,
-      track: 'Self-Generated Mixed Core + Aptitude (Like Mock Test)',
+      track: 'Technical Test Review: AGV, Pneumatics, Bearings, 5S & Core Mechanical',
       company: 'SJCE Placement Drive (All Core & Tech Recruiters)',
       difficulty: 'Intermediate (GET & 8th-Sem Internship)',
       sessionQuestionCount: 5,
       generatedQuestions: [],
       sessionScores: {},
       sessionAnswers: {},
+      sessionTimings: {},
+      totalInterviewSec: 0,
       qTimerSec: 180,
       qIndex: 0,
       answerText: '',
       evaluated: false,
       lastEvaluation: null,
       coachFeedbackHtml: '',
+      geminiChatLog: [],
       history: safeGetStorage('mechprep_v5_interview_history', [])
     },
     portalFilter: {
@@ -4579,8 +4616,199 @@ function formatReadableSyllabus(rawText) {
   }
 
   // ==========================================================================
-  // VERSION 5 PROCTORING ENGINE: WEBCAM FACE DETECTOR, MOTION DETECTOR &
-  // FULLSCREEN / TAB-SWITCH EXIT WARNING SYSTEM (SHARED BY MOCK TEST & INTERVIEW)
+  // HEADER & TITLE BAR OVERFLOW BUG FIX + QUESTION BANK ANSWER VALIDATOR
+  // + USER TECHNICAL TEST REVIEW & DRIVE 250-Q INJECTION
+  // ==========================================================================
+  function applyHeaderOverflowFixAndValidateData() {
+    if (typeof document !== 'undefined' && !document.getElementById('v5-layout-bugfix-style')) {
+      const st = document.createElement('style');
+      st.id = 'v5-layout-bugfix-style';
+      st.textContent = `
+        #app-topbar {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          align-items: center !important;
+          justify-content: space-between !important;
+          gap: 0.5rem 0.75rem !important;
+          width: 100% !important;
+          max-width: 100vw !important;
+          box-sizing: border-box !important;
+        }
+        #app-topbar > div {
+          min-width: 0 !important;
+          max-width: 100% !important;
+        }
+        #module-container h1, #module-container h2, #module-container h3 {
+          overflow-wrap: anywhere !important;
+          word-break: break-word !important;
+        }
+      `;
+      document.head.appendChild(st);
+    }
+
+    if (state._v5TechnicalTestReviewInjected) return;
+    state._v5TechnicalTestReviewInjected = true;
+
+    // 1. Inject the User's Technical Test Review Questions (Answered + Unanswered Numericals with Exact Formulas & Step-by-Step Calculations)
+    const techTestReviewQuestions = [
+      {
+        id: 'TTR-NUM-01',
+        topic: 'Pneumatics & Fluid Power (Technical Test Review)',
+        difficulty: 'Intermediate',
+        sourceType: 'technical-review',
+        text: 'Pneumatic Cylinder Bore Calculation: A pneumatic cylinder has a bore diameter D = 63 mm and operates at a gauge pressure P = 6 bar. Calculate the theoretical thrust force F developed during extension (F = P × A).',
+        options: ['1,870 N', '1,500 N', '1,200 N', '2,200 N'],
+        answer: 0,
+        explain: 'Step 1 (Unit Conversion): P = 6 bar = 6 × 10⁵ Pa = 0.6 N/mm² (MPa). Step 2 (Piston Area): A = π·D² / 4 = π × (63 mm)² / 4 = 3,117.25 mm². Step 3 (Thrust Force): F = P × A = 0.6 N/mm² × 3,117.25 mm² = 1,870.35 N ≈ 1,870 N.'
+      },
+      {
+        id: 'TTR-NUM-02',
+        topic: 'AGV Vehicle Dynamics & Machine Design (Technical Test Review)',
+        difficulty: 'Advanced',
+        sourceType: 'technical-review',
+        text: 'AGV Traction Torque (Two-Wheel Drive): An Automated Guided Vehicle (AGV) of mass m = 800 kg moves up a 3% gradient with rolling resistance coefficient C_rr = 0.02, wheel radius r = 0.15 m, and transmission efficiency η = 0.85. For a two-wheel-drive (2WD) configuration, what is the required torque per driven wheel?',
+        options: ['35 N·m', '49 N·m', '50 N·m', '65 N·m'],
+        answer: 0,
+        explain: 'Step 1 (Rolling Resistance): F_r = C_rr·m·g = 0.02 × 800 × 9.81 = 156.96 N. Step 2 (Gradient Resistance at 3%): F_g = m·g·(0.03) = 800 × 9.81 × 0.03 = 235.44 N. Step 3 (Total Tractive Effort): F_total = 156.96 + 235.44 = 392.40 N. Step 4 (Total Axle Torque): T_total = (F_total × r) / η = (392.40 × 0.15) / 0.85 = 69.25 N·m. Step 5 (Torque per Driven Wheel in 2WD): T_wheel = 69.25 / 2 = 34.63 N·m ≈ 35 N·m.'
+      },
+      {
+        id: 'TTR-NUM-03',
+        topic: 'Strength of Materials — AGV Beam Bending (Technical Test Review)',
+        difficulty: 'Intermediate',
+        sourceType: 'technical-review',
+        text: 'AGV Beam Bending Stress: A simply supported square steel beam of cross-section 50 mm × 50 mm and span L = 1 m (1000 mm) carries a central payload mass of 100 kg (W = 981 N). Calculate the maximum bending stress σ_b in the beam.',
+        options: ['12 MPa', '18 MPa', '24 MPa', '30 MPa'],
+        answer: 0,
+        explain: 'Step 1 (Load in Newtons): W = 100 × 9.81 = 981 N. Step 2 (Central Bending Moment): M_max = W·L / 4 = (981 × 1000) / 4 = 245,250 N·mm. Step 3 (Section Modulus of 50×50 mm beam): I = b·d³/12 = 50⁴/12 = 520,833.3 mm⁴, y = 25 mm → Z = I/y = 20,833.3 mm³. Step 4 (Bending Stress): σ_b = M_max / Z = 245,250 / 20,833.3 = 11.77 MPa ≈ 12 MPa.'
+      },
+      {
+        id: 'TTR-NUM-04',
+        topic: 'Machine Design — Rolling Bearing Life (Technical Test Review)',
+        difficulty: 'Intermediate',
+        sourceType: 'technical-review',
+        text: 'Bearing Life Calculation: A roller bearing has dynamic load rating C = 5000 N and equivalent radial load P = 2000 N while rotating at N = 3000 rpm. Using the roller bearing exponent p = 10/3, calculate the rated life L_10h in operating hours (and note L_10 for ball bearing p = 3).',
+        options: ['125 hours (Roller at 3000 rpm; Ball L_10 = 15.625 Mrev)', '50 hours', '100 hours', '150 hours'],
+        answer: 0,
+        explain: 'For Ball Bearing (p = 3): L_10 = (C/P)³ = (5000/2000)³ = (2.5)³ = 15.625 million revolutions. For Roller Bearing (p = 10/3) at N = 3000 rpm: L_10 = (2.5)^(10/3) = 22.56 million revolutions → Operating hours L_10h = (22.56 × 10⁶) / (60 × 3000) = 125.3 hours ≈ 125 hours.'
+      },
+      {
+        id: 'TTR-NUM-05',
+        topic: 'Pneumatics — Cylinder Air Consumption (Technical Test Review)',
+        difficulty: 'Intermediate',
+        sourceType: 'technical-review',
+        text: 'Pneumatic Cylinder Air Consumption: A pneumatic cylinder has bore D = 50 mm, stroke L = 200 mm, and operates at n = 10 cycles/min. What is the displaced cylinder air consumption per minute for a double-acting cycle (and closest standard option)?',
+        options: ['10 L/min (Exact displaced = 7.85 L/min double-acting; 3.93 L/min single-acting)', '5 L/min', '20 L/min', '40 L/min'],
+        answer: 0,
+        explain: 'Step 1 (Piston Area): A = π·(50)²/4 = 1,963.5 mm² = 0.0019635 m². Step 2 (Stroke Volume): V_stroke = A × L = 0.0019635 × 0.2 m = 0.0003927 m³ = 0.3927 Liters. Step 3 (At 10 cycles/min): Single-acting Q = 0.3927 × 10 = 3.93 L/min; Double-acting Q = 2 × 3.927 = 7.854 L/min (rounds to 10 L/min among standard options; if gauge pressure P_g is given, Free Air Delivery FAD = Q_displaced × (P_abs / P_atm)).'
+      },
+      {
+        id: 'TTR-NUM-06',
+        topic: 'Strength of Materials — Combined Axial & Bending Stress',
+        difficulty: 'Advanced',
+        sourceType: 'technical-review',
+        text: 'Combined Axial and Bending Stress Formula & Unit Check: A rectangular bar of cross-section b = 40 mm × d = 80 mm (A = 3200 mm², Z = b·d²/6 = 42,667 mm³) is subjected to axial load P and bending moment M. Which governing formula gives the maximum combined normal stress σ_max, and what is σ_max if P = 96 kN (30 MPa axial) and M = 213.3 N·m (5 MPa bending)?',
+        options: ['35 MPa (using σ_max = P/A + M·c/I with consistent N and mm units)', '20 MPa', '50 MPa', '65 MPa'],
+        answer: 0,
+        explain: 'Governing Formula: σ_max = σ_axial + σ_bending = (P / A) + (M·c / I) = P/(b·d) + 6·M/(b·d²). Unit Trap Alert: Always convert P to Newtons (N) and M to N·mm so stresses are in N/mm² (MPa). For A = 40×80 = 3200 mm² and I = 40×80³/12 = 1.7067×10⁶ mm⁴ (c = 40 mm, Z = 42,667 mm³): if P = 5000 N and M = 200 N·m, σ_max = 1.56 + 4.69 = 6.25 MPa; if P = 96 kN and M = 213.3 N·m, σ_max = 30 + 5 = 35 MPa.'
+      },
+      {
+        id: 'TTR-CON-01',
+        topic: 'Industrial Engineering & Lean Manufacturing (5S)',
+        difficulty: 'Basic',
+        sourceType: 'technical-review',
+        text: 'In Lean Manufacturing and Industrial Workplace Organization, what is the complete and exact order of the 5S methodology?',
+        options: [
+          '1. Sort (Seiri) → 2. Set in Order (Seiton) → 3. Shine (Seiso) → 4. Standardize (Seiketsu) → 5. Sustain (Shitsuke)',
+          'Sort, Set, Sustain, Standardize (4 items only)',
+          'Sort, Straighten, Store, Sell, Sustain',
+          'Setup, Machine, Inspect, Pack, Ship'
+        ],
+        answer: 0,
+        explain: 'Exam Correction Note: Never miss "Shine (Seiso)"! The 5 pillars of 5S are: (1) Sort (eliminate unneeded items), (2) Set in Order (organize layout), (3) Shine (clean & inspect workplace), (4) Standardize (create SOPs), and (5) Sustain (maintain discipline).'
+      },
+      {
+        id: 'TTR-CON-02',
+        topic: 'Manufacturing Processes — Forging & Heat Treatment',
+        difficulty: 'Basic',
+        sourceType: 'technical-review',
+        text: 'Why does hot forging produce superior mechanical strength, toughness, and fatigue resistance compared to casting or machining from bar stock?',
+        options: [
+          'It refines grain size and aligns continuous grain flow along the component contour while closing internal porosity',
+          'It increases casting blowholes and brittle dendritic segregation',
+          'It melts the metal completely above liquidus temperature',
+          'It eliminates all elastic modulus E'
+        ],
+        answer: 0,
+        explain: 'Forging plastically deforms metal under compressive force, which breaks up coarse cast dendrites, refines the grain structure, and aligns directional grain flow along principal stress trajectories.'
+      },
+      {
+        id: 'TTR-CON-03',
+        topic: 'Manufacturing & Industrial Engineering Core (EDM, Casting, Kaizen, Line Balancing)',
+        difficulty: 'Basic',
+        sourceType: 'technical-review',
+        text: 'Match the following verified manufacturing & industrial engineering definitions from the Technical Assessment: (1) Trapped gas casting defect, (2) Thermal spark erosion machining, (3) Line balancing objective, (4) Kaizen, (5) Accuracy.',
+        options: [
+          '(1) Blowhole · (2) EDM (Electrical Discharge Machining) · (3) Reduce workstation idle time · (4) Continuous small improvements · (5) Closeness to true value',
+          '(1) Cold shut · (2) Turning · (3) Increase cycle delay · (4) Batch rework · (5) Repeatability only',
+          '(1) Misrun · (2) Milling · (3) Maximize bottleneck · (4) Total replacement · (5) Zero tolerance',
+          'None of the above'
+        ],
+        answer: 0,
+        explain: 'All 5 conceptual answers verified: Trapped gas in casting forms rounded Blowholes; EDM removes hard conductive metal via controlled thermal spark erosion; Line balancing equalizes station workloads to minimize idle time; Kaizen means continuous incremental improvement; Accuracy is closeness of a measured value to the true value.'
+      }
+    ];
+
+    state.questions = techTestReviewQuestions.concat(state.questions);
+
+    // 2. Also add a dedicated Study Guide for the Technical Test Review & Formula Sheet
+    state.guides.unshift({
+      id: 'guide-tech-test-review-v5',
+      guideType: 'core-guide',
+      sourceBank: 'Technical Test Review & Formula Sheet',
+      topic: 'AGV Torque, Pneumatics, Bearings, Bending & 5S',
+      name: 'Technical Test Review: Answered & Unanswered Numerical Formula Master Sheet',
+      title: 'Technical Test Review: Answered & Unanswered Numerical Formula Master Sheet',
+      syllabus: 'Pneumatic Cylinder Bore Force & Air Consumption, AGV 2WD Traction Torque, Beam Bending, Bearing L10h Life & 5S',
+      idea: 'Complete step-by-step formula breakdown and unit-consistency guide for your Technical Test Review (Overall Readiness: ~70–75% — strong conceptual base; always convert bar → N/mm², kg → N, and divide total axle torque by 2 for 2WD AGVs).',
+      formula: [
+        ['Pneumatic Cylinder Thrust Force (D=63mm, P=6 bar)', 'P = 6 bar = 0.6 N/mm² ; A = π·D²/4 = 3117.25 mm² ; F = P·A = 1,870.35 N ≈ 1,870 N'],
+        ['AGV 2WD Wheel Torque (m=800kg, Crr=0.02, 3% grad, r=0.15m, η=0.85)', 'F_total = m·g(C_rr + grad) = 156.96 + 235.44 = 392.4 N ; T_total = F·r/η = 69.25 N·m ; T_each(2WD) = 69.25/2 = 34.63 ≈ 35 N·m'],
+        ['AGV Square Beam Bending (W=100kg=981N, L=1000mm, 50×50mm)', 'M = W·L/4 = 245,250 N·mm ; I = b·d³/12 = 520,833 mm⁴ ; y = 25 mm ; σ_b = M·y/I = 11.77 ≈ 12 MPa'],
+        ['Bearing Life L_10 & Hours L_10h (C=5000, P=2000, N=3000 rpm)', 'Ball (p=3): L_10 = (C/P)³ = 15.625 Mrev · Roller (p=10/3): L_10 = (2.5)^(10/3) = 22.56 Mrev → L_h = 22.56×10⁶/(60×3000) = 125.3 ≈ 125 h'],
+        ['Pneumatic Air Consumption (D=50mm, L=200mm, n=10 cpm)', 'V_stroke = (π·0.5²/4)×2 = 0.3927 L ; Single-acting = 3.93 L/min ; Double-acting = 2×3.927 = 7.85 L/min (≈ 10 L/min option)'],
+        ['Combined Axial + Bending Stress & Gear Ratio', 'σ_max = P/(b·d) + 6·M/(b·d²) ; Gear Ratio i = N₁/N₂ = D₂/D₁ = Z₂/Z₁ (Requires both driver & driven values)'],
+        ['Complete 5S Sequence & Forging', '5S = 1. Sort → 2. Set in Order → 3. Shine → 4. Standardize → 5. Sustain · Forging refines grain structure & toughness']
+      ],
+      trick: [
+        '1 bar = 0.1 MPa = 0.1 N/mm² (fastest shortcut for pneumatic cylinder force F = 0.1·P_bar × πD²/4 in Newtons!).',
+        'In AGV traction problems, always check if the drive is Single-Wheel or Two-Wheel Drive (2WD divides total axle torque by 2).',
+        'Never forget the 3rd S in 5S: SHINE (Seiso) comes between Set in Order and Standardize.'
+      ]
+    });
+
+    // 3. Validate all question answer indices in state.questions so no broken/out-of-range answer index exists
+    state.questions.forEach(q => {
+      if (Array.isArray(q.options) && q.options.length > 0) {
+        if (typeof q.answer === 'string') {
+          const trimmed = q.answer.trim().toUpperCase();
+          if (['A', 'B', 'C', 'D'].includes(trimmed)) {
+            q.answer = trimmed.charCodeAt(0) - 65;
+          } else {
+            const num = Number(trimmed);
+            q.answer = Number.isFinite(num) ? num : 0;
+          }
+        }
+        if (typeof q.answer !== 'number' || isNaN(q.answer) || q.answer < 0 || q.answer >= q.options.length) {
+          q.answer = 0;
+        }
+      }
+    });
+  }
+  applyHeaderOverflowFixAndValidateData();
+
+  // ==========================================================================
+  // VERSION 5 PROCTORING ENGINE: SELECTABLE CAMERA ON/OFF, AI CHEATING DETECTOR,
+  // EXIT-CLICK WARNING CONFIRMATION MODAL & STRICT 3-WARNING AUTO-TERMINATION
   // ==========================================================================
   let proctorMediaStream = null;
   let proctorIntervalId = null;
@@ -4597,55 +4825,100 @@ function formatReadableSyllabus(rawText) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(620, ctx.currentTime);
-      osc.frequency.setValueAtTime(440, ctx.currentTime + 0.14);
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.32);
+      osc.frequency.setValueAtTime(640, ctx.currentTime);
+      osc.frequency.setValueAtTime(420, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.14, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      osc.stop(ctx.currentTime + 0.33);
+      osc.stop(ctx.currentTime + 0.36);
     } catch {}
   }
 
   function isProctoredSessionActive() {
-    return Boolean(
-      (state.mockExam.active && !state.mockExam.finished && state.mockExam.proctoringEnabled) ||
-      (state.interviewState.activeFullscreen && !state.interviewState.sessionFinished && state.interviewState.proctoringEnabled)
-    );
+    const mockActive = state.mockExam.active && !state.mockExam.finished;
+    const ivActive = state.interviewState.activeFullscreen && !state.interviewState.sessionFinished;
+    return Boolean(mockActive || ivActive);
   }
 
-  function triggerProctorViolation(reasonText) {
-    if (!isProctoredSessionActive()) return;
-    const nowTime = new Date().toLocaleTimeString();
-    const ps = state.proctorState;
+  function isCameraProctoringEnabled() {
+    if (state.mockExam.active && !state.mockExam.finished) {
+      return Boolean(state.mockExam.proctoringEnabled);
+    }
+    if (state.interviewState.activeFullscreen && !state.interviewState.sessionFinished) {
+      return Boolean(state.interviewState.proctoringEnabled);
+    }
+    return false;
+  }
 
-    // Debounce identical warnings within 2.5 seconds
-    if (ps._lastWarnTs && Date.now() - ps._lastWarnTs < 2500) return;
+  function terminateSessionDueToMaxWarnings(reasonText) {
+    const ps = state.proctorState;
+    ps.terminatedByLimit = true;
+    playProctorWarningBeep();
+    showToast(`⛔ SESSION ENDED: Maximum ${ps.maxWarnings}/${ps.maxWarnings} Proctoring Warnings Exceeded (${reasonText})!`, 'warn');
+
+    if (state.mockExam.active && !state.mockExam.finished) {
+      state.mockExam.terminatedByProctor = true;
+      state.mockExam.TerminationReason = `Auto-Terminated after ${ps.warningCount}/${ps.maxWarnings} Warnings (Last: ${reasonText})`;
+      speakInterviewText(`Warning limit of ${ps.maxWarnings} exceeded. Your mock test session has been automatically ended and submitted.`);
+      finishMockExam();
+      return;
+    }
+
+    if (state.interviewState.activeFullscreen && !state.interviewState.sessionFinished) {
+      state.interviewState.terminatedByProctor = true;
+      state.interviewState.sessionFinished = true;
+      stopProctorCameraAndDetector();
+      speakInterviewText(`Warning limit of ${ps.maxWarnings} reached. Ending the interview session now and generating your performance report.`);
+      renderPlacementPrep();
+    }
+  }
+
+  function triggerProctorViolation(reasonText, forceEvenIfCameraOff = false) {
+    if (!isProctoredSessionActive()) return;
+    if (!forceEvenIfCameraOff && !isCameraProctoringEnabled()) return;
+
+    const ps = state.proctorState;
+    // Debounce rapid duplicate triggers within 2.8 seconds
+    if (ps._lastWarnTs && Date.now() - ps._lastWarnTs < 2800) return;
     ps._lastWarnTs = Date.now();
 
+    const nowTime = new Date().toLocaleTimeString();
+    ps.maxWarnings = 3;
     ps.warningCount += 1;
+    ps.bannerVisible = true;
     ps.lastAlert = `${reasonText} (${nowTime})`;
     ps.events.unshift({ time: nowTime, reason: reasonText, strike: ps.warningCount });
 
     if (state.mockExam.active && !state.mockExam.finished) {
       state.mockExam.warnings = ps.warningCount;
+      state.mockExam.maxWarnings = 3;
       state.mockExam.lastWarningReason = ps.lastAlert;
       state.mockExam.warningLog.unshift(ps.lastAlert);
     }
 
     playProctorWarningBeep();
-    showToast(`⚠️ PROCTORING WARNING (${ps.warningCount}/${ps.maxWarnings}): ${reasonText}`, 'warn');
 
-    // Update live warning UI banner immediately if present
+    // Check if 3-Warning Limit is reached -> Immediately end session!
+    if (ps.warningCount >= ps.maxWarnings) {
+      terminateSessionDueToMaxWarnings(reasonText);
+      return;
+    }
+
+    showToast(`⚠️ PROCTORING WARNING (${ps.warningCount} of ${ps.maxWarnings}): ${reasonText}`, 'warn');
+
+    // Update live warning UI banner & badge without full re-render bug
     const banner = document.getElementById('proctor-warning-banner');
     const bannerMsg = document.getElementById('proctor-warning-msg');
     const strikeBadge = document.getElementById('proctor-strike-badge');
     if (banner) banner.classList.remove('hidden');
-    if (bannerMsg) bannerMsg.textContent = `Strike ${ps.warningCount}/${ps.maxWarnings}: ${reasonText}. Stay in Full-Screen and keep your face centered in the camera frame.`;
+    if (bannerMsg) {
+      bannerMsg.textContent = `⚠️ Warning ${ps.warningCount} of ${ps.maxWarnings}: ${reasonText}. At ${ps.maxWarnings} warnings, your session will automatically end!`;
+    }
     if (strikeBadge) {
       strikeBadge.textContent = `⚠️ Warnings: ${ps.warningCount} / ${ps.maxWarnings}`;
-      strikeBadge.className = 'px-3 py-1.5 rounded-xl bg-rose-600 text-white font-extrabold text-xs animate-pulse shadow';
+      strikeBadge.className = 'px-2.5 py-1 rounded-lg bg-rose-600 text-white font-extrabold text-[11px] animate-pulse shadow';
     }
   }
 
@@ -4655,19 +4928,19 @@ function formatReadableSyllabus(rawText) {
 
     document.addEventListener('fullscreenchange', () => {
       if (isProctoredSessionActive() && !document.fullscreenElement) {
-        triggerProctorViolation('Exited Full-Screen Assessment Mode');
+        triggerProctorViolation('Exited Full-Screen Mode Without Permission', true);
       }
     });
 
     document.addEventListener('visibilitychange', () => {
       if (isProctoredSessionActive() && document.hidden) {
-        triggerProctorViolation('Switched Browser Tab or Minimized Window');
+        triggerProctorViolation('Tab Switched or Window Minimized (Cheating Guard)', true);
       }
     });
 
     window.addEventListener('blur', () => {
-      if (isProctoredSessionActive()) {
-        triggerProctorViolation('Window Focus Lost (External Application Clicked)');
+      if (isProctoredSessionActive() && isCameraProctoringEnabled()) {
+        triggerProctorViolation('Window Focus Lost (External App Clicked)', false);
       }
     });
   }
@@ -4675,6 +4948,13 @@ function formatReadableSyllabus(rawText) {
   async function startProctorCameraAndDetector() {
     ensureProctorGlobalListeners();
     const ps = state.proctorState;
+    ps.maxWarnings = 3;
+
+    if (!isCameraProctoringEnabled()) {
+      stopProctorCameraAndDetector();
+      ps.statusText = '📷 Camera OFF (User Selected Off)';
+      return;
+    }
 
     if (typeof window !== 'undefined' && 'FaceDetector' in window && !proctorNativeFaceDetector) {
       try {
@@ -4689,9 +4969,10 @@ function formatReadableSyllabus(rawText) {
           audio: false
         });
         ps.cameraActive = true;
+        ps.warmupUntil = Date.now() + 4000; // 4-second camera warmup grace period to prevent false warnings
       } catch {
         ps.cameraActive = false;
-        ps.statusText = '📷 Camera Permission Pending (Tab & Exit Guard Active)';
+        ps.statusText = '📷 Camera Unavailable (Tab & Exit Guard Active)';
       }
     }
 
@@ -4707,14 +4988,14 @@ function formatReadableSyllabus(rawText) {
 
     if (proctorIntervalId) clearInterval(proctorIntervalId);
     proctorIntervalId = setInterval(async () => {
-      if (!isProctoredSessionActive()) return;
+      if (!isProctoredSessionActive() || !isCameraProctoringEnabled()) return;
       const vid = document.getElementById('proctor-webcam-video');
       const statusEl = document.getElementById('proctor-live-status');
       const motionBarEl = document.getElementById('proctor-motion-bar');
       const reticleEl = document.getElementById('proctor-face-reticle');
 
       if (!vid || !ps.cameraActive || vid.readyState < 2) {
-        if (statusEl) statusEl.textContent = ps.cameraActive ? '📷 Initializing Face & Motion Sensor...' : '🛡️ Exit & Tab Guard Active (Allow Camera for Face/Motion)';
+        if (statusEl) statusEl.textContent = ps.cameraActive ? '📷 Calibrating AI Camera Detector...' : '🛡️ Exit & Tab Guard Active';
         return;
       }
 
@@ -4727,7 +5008,6 @@ function formatReadableSyllabus(rawText) {
       ctx.drawImage(vid, 0, 0, 64, 48);
       const frame = ctx.getImageData(0, 0, 64, 48).data;
 
-      // 1. Compute Frame-to-Frame Motion Percentage & Center Face Region Presence
       let diffSum = 0;
       let centerLumaSum = 0;
       let centerSkinPixels = 0;
@@ -4744,11 +5024,10 @@ function formatReadableSyllabus(rawText) {
             diffSum += (Math.abs(r - pr) + Math.abs(g - pg) + Math.abs(b - pb)) / 3;
           }
 
-          // Center face bounding zone (x: 16..48, y: 8..40)
-          if (x >= 16 && x <= 48 && y >= 8 && y <= 40) {
+          if (x >= 14 && x <= 50 && y >= 6 && y <= 42) {
             centerCount++;
             centerLumaSum += luma;
-            if (r > 60 && g > 40 && b > 25 && r > b && Math.abs(r - g) < 90) {
+            if (r > 55 && g > 35 && b > 20 && r > b && Math.abs(r - g) < 95) {
               centerSkinPixels++;
             }
           }
@@ -4758,16 +5037,15 @@ function formatReadableSyllabus(rawText) {
 
       const motionPct = Math.min(100, Math.round((diffSum / (64 * 48 * 42)) * 100));
       const avgCenterLuma = centerLumaSum / Math.max(1, centerCount);
-      let facePresent = avgCenterLuma > 22 && avgCenterLuma < 248 && centerSkinPixels > 45;
+      let facePresent = avgCenterLuma > 20 && avgCenterLuma < 250 && centerSkinPixels > 38;
 
-      // Also check native FaceDetector if available
       if (proctorNativeFaceDetector) {
         try {
           const faces = await proctorNativeFaceDetector.detect(vid);
           if (faces && faces.length > 0) {
             facePresent = true;
-            if (faces.length > 1) {
-              triggerProctorViolation('Multiple Faces Detected in Camera Frame');
+            if (faces.length > 1 && Date.now() > ps.warmupUntil) {
+              triggerProctorViolation('AI Camera Detected Multiple Faces in Frame');
             }
           }
         } catch {}
@@ -4776,46 +5054,49 @@ function formatReadableSyllabus(rawText) {
       ps.motionPct = motionPct;
       ps.faceDetected = facePresent;
 
-      if (!facePresent) {
-        ps.missingFrames += 1;
-        if (ps.missingFrames >= 4) {
+      // Only count violations after initial 4-second camera warmup
+      if (Date.now() > ps.warmupUntil) {
+        if (!facePresent) {
+          ps.missingFrames += 1;
+          if (ps.missingFrames >= 5) {
+            ps.missingFrames = 0;
+            triggerProctorViolation('AI Camera: Face Not Detected / Looking Away');
+          }
+        } else {
           ps.missingFrames = 0;
-          triggerProctorViolation('Face Not Detected / Looking Away from Screen');
         }
-      } else {
-        ps.missingFrames = 0;
-      }
 
-      if (motionPct > 34) {
-        ps.highMotionFrames += 1;
-        if (ps.highMotionFrames >= 2) {
+        if (motionPct > 38) {
+          ps.highMotionFrames += 1;
+          if (ps.highMotionFrames >= 3) {
+            ps.highMotionFrames = 0;
+            triggerProctorViolation(`AI Camera: Suspicious Motion Detected (${motionPct}% movement)`);
+          }
+        } else {
           ps.highMotionFrames = 0;
-          triggerProctorViolation(`Excessive Head/Body Motion Detected (${motionPct}% delta)`);
         }
-      } else {
-        ps.highMotionFrames = 0;
       }
 
       if (statusEl) {
         if (!facePresent) {
           statusEl.textContent = `⚠️ Face Off-Center · Motion ${motionPct}%`;
-          statusEl.className = 'text-[11px] font-extrabold text-amber-300';
-        } else if (motionPct > 26) {
+          statusEl.className = 'text-[10px] font-extrabold text-amber-300';
+        } else if (motionPct > 30) {
           statusEl.textContent = `⚠️ High Motion (${motionPct}%) · Hold Steady`;
-          statusEl.className = 'text-[11px] font-extrabold text-rose-300';
+          statusEl.className = 'text-[10px] font-extrabold text-rose-300';
         } else {
           statusEl.textContent = `✓ Face Verified · Motion ${motionPct}%`;
-          statusEl.className = 'text-[11px] font-extrabold text-emerald-300';
+          statusEl.className = 'text-[10px] font-extrabold text-emerald-300';
         }
       }
       if (motionBarEl) {
         motionBarEl.style.width = `${Math.min(100, Math.max(6, motionPct))}%`;
-        motionBarEl.className = `h-1.5 rounded-full transition-all ${motionPct > 28 ? 'bg-rose-500' : motionPct > 16 ? 'bg-amber-400' : 'bg-emerald-400'}`;
+        motionBarEl.className = `h-1.5 rounded-full transition-all ${motionPct > 30 ? 'bg-rose-500' : motionPct > 18 ? 'bg-amber-400' : 'bg-emerald-400'}`;
       }
       if (reticleEl) {
-        reticleEl.className = `absolute inset-3 rounded-xl border-2 pointer-events-none transition-all ${!facePresent ? 'border-rose-500 animate-pulse' : motionPct > 26 ? 'border-amber-400' : 'border-emerald-400/80'}`;
+        reticleEl.className = `absolute inset-2.5 rounded-xl border-2 pointer-events-none transition-all ${!facePresent ? 'border-rose-500 animate-pulse' : motionPct > 30 ? 'border-amber-400' : 'border-emerald-400/80'}`;
       }
-    }, 650);
+    }, 700);
   }
 
   function stopProctorCameraAndDetector() {
@@ -4835,58 +5116,104 @@ function formatReadableSyllabus(rawText) {
 
   function renderProctorWarningBannerHtml() {
     const ps = state.proctorState;
+    const showBanner = Boolean(ps.bannerVisible && ps.lastAlert);
     return `
-      <div id="proctor-warning-banner" class="${ps.lastAlert ? '' : 'hidden'} rounded-2xl bg-rose-950/95 border-2 border-rose-500 text-white p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl">
+      <div id="proctor-warning-banner" class="${showBanner ? '' : 'hidden'} rounded-2xl bg-rose-950/95 border-2 border-rose-500 text-white p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl">
         <div class="flex items-center gap-3">
-          <span class="px-2.5 py-1 rounded-lg bg-rose-600 font-black text-xs uppercase tracking-wider animate-pulse">⚠️ Proctoring Alert</span>
+          <span class="px-2.5 py-1 rounded-lg bg-rose-600 font-black text-xs uppercase tracking-wider animate-pulse">⚠️ Proctoring Warning (${ps.warningCount}/${ps.maxWarnings})</span>
           <span id="proctor-warning-msg" class="text-xs sm:text-sm font-bold text-rose-100">
-            ${escapeHtml(ps.lastAlert || 'Please remain in Full-Screen mode and keep your face centered.')} (Warnings: ${ps.warningCount}/${ps.maxWarnings})
+            Warning ${ps.warningCount} of ${ps.maxWarnings}: ${escapeHtml(ps.lastAlert || 'Keep your face centered and remain in Full-Screen.')}. Session auto-ends at ${ps.maxWarnings} warnings!
           </span>
         </div>
         <div class="flex items-center gap-2">
           <button type="button" id="proctor-relock-fs-btn" class="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow">
-            🔒 Re-Lock Fullscreen &amp; Continue
+            🔒 Acknowledge &amp; Lock Fullscreen
           </button>
         </div>
       </div>
     `;
   }
 
-  function renderProctorCameraWidgetHtml(compact = false) {
+  function renderExitConfirmationModalHtml(isOpen, contextLabel = 'Session') {
+    if (!isOpen) return '';
     const ps = state.proctorState;
     return `
-      <div class="bg-slate-900 text-white rounded-2xl border border-slate-700 p-3 shadow-lg ${compact ? 'w-full sm:w-64' : 'w-full'} space-y-2">
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-[10px] font-extrabold uppercase tracking-wider text-blue-300 flex items-center gap-1">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            AI Face &amp; Motion Proctor
-          </span>
-          <span id="proctor-strike-badge" class="px-2 py-0.5 rounded-lg ${ps.warningCount > 0 ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-800 text-slate-300'} font-extrabold text-[10px]">
-            ⚠️ ${ps.warningCount}/${ps.maxWarnings}
-          </span>
-        </div>
-        <div class="relative w-full h-28 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
-          <video id="proctor-webcam-video" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
-          <div id="proctor-face-reticle" class="absolute inset-3 rounded-xl border-2 border-emerald-400/80 pointer-events-none"></div>
-          <div class="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] bg-slate-950/80 px-2 py-0.5 rounded">
-            <span id="proctor-live-status" class="font-extrabold text-emerald-300">${escapeHtml(ps.statusText)}</span>
+      <div id="proctor-exit-confirm-modal" class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border-2 border-rose-500 text-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+          <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl bg-rose-600 flex items-center justify-center text-xl font-black shrink-0">⚠️</div>
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-rose-400">Exit Warning &amp; Session Guard</span>
+              <h3 class="text-lg font-extrabold text-white">Exit Active ${escapeHtml(contextLabel)}?</h3>
+            </div>
           </div>
-        </div>
-        <div class="space-y-1">
-          <div class="flex items-center justify-between text-[10px] text-slate-400">
-            <span>Motion Sensor Sensitivity</span>
-            <span>Exit/Tab Guard: ON</span>
-          </div>
-          <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div id="proctor-motion-bar" class="h-1.5 bg-emerald-400 rounded-full transition-all" style="width: 10%"></div>
+          <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+            You clicked <b>Exit</b> during an active proctored ${escapeHtml(contextLabel.toLowerCase())}.
+            Current Proctoring Warnings: <b class="text-amber-300">${ps.warningCount} / ${ps.maxWarnings}</b>.
+            If you confirm exit now, your session will immediately end and generate your final performance &amp; timing report.
+          </p>
+          <div class="flex flex-wrap items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+            <button type="button" id="exit-modal-cancel-btn" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow">
+              ↩ Stay &amp; Resume ${escapeHtml(contextLabel)}
+            </button>
+            <button type="button" id="exit-modal-confirm-btn" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow">
+              ✕ Confirm Exit &amp; End Session Now
+            </button>
           </div>
         </div>
       </div>
     `;
   }
 
+  function renderProctorCameraWidgetHtml(compact = false, toggleId = 'live-camera-toggle-btn') {
+    const ps = state.proctorState;
+    const camOn = isCameraProctoringEnabled();
+    return `
+      <div class="bg-slate-900 text-white rounded-2xl border border-slate-700 p-3 shadow-lg ${compact ? 'w-full sm:w-68' : 'w-full'} space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-blue-300 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full ${camOn ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}"></span>
+            AI Camera Proctor (${camOn ? 'ON' : 'OFF'})
+          </span>
+          <div class="flex items-center gap-1.5">
+            <button type="button" id="${escapeHtml(toggleId)}" class="px-2 py-0.5 rounded-lg ${camOn ? 'bg-emerald-700 hover:bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-200'} font-bold text-[10px] transition">
+              📷 ${camOn ? 'Cam ON' : 'Cam OFF'}
+            </button>
+            <span id="proctor-strike-badge" class="px-2 py-0.5 rounded-lg ${ps.warningCount > 0 ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-800 text-slate-300'} font-extrabold text-[10px]">
+              ⚠️ ${ps.warningCount}/${ps.maxWarnings}
+            </span>
+          </div>
+        </div>
+        ${camOn ? `
+          <div class="relative w-full h-28 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+            <video id="proctor-webcam-video" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
+            <div id="proctor-face-reticle" class="absolute inset-2.5 rounded-xl border-2 border-emerald-400/80 pointer-events-none"></div>
+            <div class="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] bg-slate-950/80 px-2 py-0.5 rounded">
+              <span id="proctor-live-status" class="font-extrabold text-emerald-300">${escapeHtml(ps.statusText)}</span>
+            </div>
+          </div>
+          <div class="space-y-1">
+            <div class="flex items-center justify-between text-[10px] text-slate-400">
+              <span>Cheating &amp; Motion Sensor</span>
+              <span>Max 3 Warnings</span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div id="proctor-motion-bar" class="h-1.5 bg-emerald-400 rounded-full transition-all" style="width: 10%"></div>
+            </div>
+          </div>
+        ` : `
+          <div class="w-full h-24 bg-slate-950 rounded-xl border border-slate-800 flex flex-col items-center justify-center text-center p-2">
+            <span class="text-xs font-bold text-slate-400">📷 Camera Detector is OFF</span>
+            <span class="text-[10px] text-slate-500 mt-0.5">Click "Cam OFF" above anytime to enable AI face &amp; motion proctoring.</span>
+          </div>
+        `}
+      </div>
+    `;
+  }
+
   function bindProctorBannerEvents() {
     document.getElementById('proctor-relock-fs-btn')?.addEventListener('click', () => {
+      state.proctorState.bannerVisible = false;
       try {
         if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
           document.documentElement.requestFullscreen().catch(() => {});
@@ -4896,57 +5223,66 @@ function formatReadableSyllabus(rawText) {
     });
   }
 
-  // --- MODULE 14: TIMED MOCK TESTS (VERSION 5: FACE & MOTION PROCTORING + EXIT WARNING + JOB PROCESS STAGE 1) ---
+  // --- MODULE 14: TIMED MOCK TESTS (VERSION 5: 3-WARNING AUTO-END, EXIT WARNING MODAL, TIMING TRACKER & GEMINI VOICE HELPER) ---
   function renderMockTests() {
     const m = state.mockExam;
 
     if (m.active && !m.finished) {
       syncExamFullscreenMode(true);
       if (m.proctoringEnabled) startProctorCameraAndDetector();
+      else stopProctorCameraAndDetector();
 
       const q = m.questions[m.currentIndex] || m.questions[0];
       const chosen = m.answers[q.id];
       const mins = String(Math.floor(m.remainingSec / 60)).padStart(2, '0');
       const secs = String(m.remainingSec % 60).padStart(2, '0');
       const answeredCount = Object.keys(m.answers).length;
+      const spentOnCurrentSec = m.questionTimings[q.id] || 0;
 
       container.innerHTML = `
         <div class="max-w-6xl mx-auto space-y-4">
+          ${renderExitConfirmationModalHtml(m.showExitConfirmModal, 'Mock Examination')}
           ${renderProctorWarningBannerHtml()}
 
           <!-- Full-Screen Active Exam Header + Live Face & Motion Detector HUD -->
           <div class="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xl border border-blue-800/60">
-            <div class="space-y-1">
+            <div class="space-y-1.5 min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-600 text-white">
-                  ${m.jobProcessMode ? '🏢 Version 5 Actual Job Process · Stage 1: Online Proctored Screening Test' : '🛡️ Version 5 Proctored Full-Screen Examination'}
+                  ${m.jobProcessMode ? '🏢 Version 5 Job Process · Round 1 Screening Test' : '🛡️ Version 5 Proctored Mock Exam'}
                 </span>
-                <span class="text-[11px] font-bold text-emerald-300">Face + Motion + Exit Warning Active</span>
+                <span class="text-[11px] font-bold text-amber-300">Max 3 Warnings Auto-End · Per-Question Timer Active</span>
               </div>
-              <h1 class="text-lg sm:text-xl font-extrabold">${escapeHtml(m.title)}</h1>
-              <div class="flex flex-wrap items-center gap-3 pt-1">
+              <h1 class="text-base sm:text-xl font-extrabold truncate">${escapeHtml(m.title)}</h1>
+              <div class="flex flex-wrap items-center gap-2.5 pt-1">
                 <span class="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700">
                   Answered: ${answeredCount} / ${m.questions.length}
                 </span>
-                <div id="mock-timer-readout" class="px-4 py-1.5 rounded-xl bg-blue-950 border border-blue-700 font-mono text-base sm:text-lg font-extrabold text-blue-200">
+                <span id="mock-q-spent-readout" class="text-xs font-bold px-3 py-1.5 rounded-xl bg-indigo-950 text-indigo-200 border border-indigo-700 font-mono">
+                  ⏳ This Q: ${spentOnCurrentSec}s
+                </span>
+                <div id="mock-timer-readout" class="px-3.5 py-1.5 rounded-xl bg-blue-950 border border-blue-700 font-mono text-sm sm:text-base font-extrabold text-blue-200">
                   ⏱ ${mins}:${secs}
                 </div>
-                <button type="button" id="toggle-fs-exam-btn" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold">
-                  ⛶ Lock Fullscreen
+                <button type="button" id="mock-gemini-read-btn" class="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold">
+                  🔊 Gemini Read Q
+                </button>
+                <button type="button" id="exit-mock-exam-btn" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-700 text-slate-200 hover:text-white border border-slate-600 text-xs font-bold transition">
+                  ✕ Exit Exam
                 </button>
                 <button type="button" id="submit-mock-exam-btn" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow">
-                  Submit Exam →
+                  ✓ Submit Exam →
                 </button>
               </div>
             </div>
 
-            <!-- Live Webcam Face & Motion Detector Widget inside Mock Test -->
-            ${renderProctorCameraWidgetHtml(true)}
+            <!-- Live Webcam Face & Motion Detector Widget inside Mock Test (with Camera ON/OFF toggle) -->
+            ${renderProctorCameraWidgetHtml(true, 'mock-live-cam-toggle')}
           </div>
 
           <!-- Full-Width Active Question Card (Vertical unnumbered options) -->
-          <div class="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-lg space-y-5">
-            <div class="flex items-center justify-between text-xs text-slate-500 border-b border-slate-100 pb-3">
+          <div class="bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 shadow-lg space-y-5">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 border-b border-slate-100 pb-3">
               <span class="font-bold text-slate-900 text-sm">Question ${m.currentIndex + 1} of ${m.questions.length} · <span class="text-blue-700">${escapeHtml(q.topic)}</span></span>
               <span class="font-semibold text-slate-600">${escapeHtml(q.difficulty || 'Standard')} · ${m.negativeMarking ? '+4 / −1 Marks' : '+4 Marks'}</span>
             </div>
@@ -4990,18 +5326,48 @@ function formatReadableSyllabus(rawText) {
       `;
 
       bindProctorBannerEvents();
-      container.querySelectorAll('[data-mock-opt]').forEach(b => {
-        b.addEventListener('click', () => {
-          m.answers[q.id] = Number(b.dataset.mockOpt);
-          renderMockTests();
-        });
+
+      document.getElementById('mock-live-cam-toggle')?.addEventListener('click', () => {
+        m.proctoringEnabled = !m.proctoringEnabled;
+        if (m.proctoringEnabled) {
+          startProctorCameraAndDetector();
+          showToast('📷 AI Camera & Cheating Detector enabled (3-Warning Limit active).', 'success');
+        } else {
+          stopProctorCameraAndDetector();
+          showToast('📷 Camera turned OFF by user.', 'info');
+        }
+        renderMockTests();
       });
-      document.getElementById('toggle-fs-exam-btn')?.addEventListener('click', () => {
+
+      document.getElementById('mock-gemini-read-btn')?.addEventListener('click', () => {
+        speakInterviewText(`Question ${m.currentIndex + 1}. ${String(q.text).replace(/<[^>]+>/g, '')}`);
+      });
+
+      // Exit Button Warning Confirmation Modal
+      document.getElementById('exit-mock-exam-btn')?.addEventListener('click', () => {
+        m.showExitConfirmModal = true;
+        triggerProctorViolation('Clicked Exit Button During Active Mock Exam', true);
+        if (m.active && !m.finished) renderMockTests();
+      });
+      document.getElementById('exit-modal-cancel-btn')?.addEventListener('click', () => {
+        m.showExitConfirmModal = false;
         try {
           if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
             document.documentElement.requestFullscreen().catch(() => {});
           }
         } catch {}
+        renderMockTests();
+      });
+      document.getElementById('exit-modal-confirm-btn')?.addEventListener('click', () => {
+        m.showExitConfirmModal = false;
+        finishMockExam();
+      });
+
+      container.querySelectorAll('[data-mock-opt]').forEach(b => {
+        b.addEventListener('click', () => {
+          m.answers[q.id] = Number(b.dataset.mockOpt);
+          renderMockTests();
+        });
       });
       document.getElementById('mock-flag-btn')?.addEventListener('click', () => {
         m.reviewFlags[q.id] = !m.reviewFlags[q.id];
@@ -5031,23 +5397,64 @@ function formatReadableSyllabus(rawText) {
 
     if (m.finished && m.lastResult) {
       const r = m.lastResult;
+      const totalSec = Math.max(1, m.totalElapsedSec || 1);
+      const avgSecPerQ = (totalSec / Math.max(1, m.questions.length)).toFixed(1);
+
       container.innerHTML = `
         <div class="space-y-6">
-          <div class="bg-slate-900 text-white rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xl">
-            <div class="space-y-1">
-              <span class="text-xs font-bold uppercase text-emerald-400">Version 5 Proctored Assessment Complete · Detailed Review</span>
-              <h1 class="text-2xl font-extrabold">Score: ${r.pct}% (${r.earnedMarks} / ${r.maxMarks} Marks)</h1>
-              <p class="text-xs text-slate-300">
-                Correct: <b>${r.correct}</b> · Wrong: <b>${r.wrong}</b> · Unanswered: <b>${r.unanswered}</b> · Proctoring Warnings Logged: <b>${state.proctorState.warningCount}</b>
-              </p>
+          ${m.terminatedByProctor ? `
+            <div class="rounded-2xl bg-rose-950 border-2 border-rose-500 text-white p-5 shadow-xl flex items-center gap-4">
+              <div class="text-3xl">⛔</div>
+              <div>
+                <div class="text-xs font-black uppercase tracking-wider text-rose-400">Session Auto-Terminated by AI Proctoring Guard</div>
+                <div class="text-base font-extrabold mt-0.5">${escapeHtml(m.TerminationReason || 'Exceeded maximum 3 proctoring warnings (Exit / Motion / Face Detection).')}</div>
+              </div>
             </div>
-            <div class="flex flex-wrap gap-2.5">
-              <button type="button" id="proceed-stage2-interview-btn" class="px-5 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs sm:text-sm font-extrabold shadow-lg">
-                🎙️ Proceed to Stage 2: Human-Motion AI Technical Interview →
-              </button>
-              <button type="button" id="new-mock-btn" class="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold">
-                ↻ New Mock Exam
-              </button>
+          ` : ''}
+
+          <!-- Comprehensive Performance, Score & Answering Timing Analytics Report -->
+          <div class="bg-slate-900 text-white rounded-2xl p-6 space-y-5 shadow-xl">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div class="space-y-1">
+                <span class="text-xs font-bold uppercase text-emerald-400">Version 5 Proctored Assessment &amp; Timing Performance Report</span>
+                <h1 class="text-2xl font-extrabold">Overall Score: ${r.pct}% (${r.earnedMarks} / ${r.maxMarks} Marks)</h1>
+                <p class="text-xs text-slate-300">
+                  Correct: <b>${r.correct}</b> · Wrong: <b>${r.wrong}</b> · Unanswered: <b>${r.unanswered}</b> · Proctoring Warnings: <b>${state.proctorState.warningCount} / 3</b>
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2.5">
+                <button type="button" id="speak-mock-report-btn" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow">
+                  🔊 Gemini Voice Summary
+                </button>
+                <button type="button" id="proceed-stage2-interview-btn" class="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold shadow-lg">
+                  🎙️ Proceed to Stage 2: Gemini AI Interview →
+                </button>
+                <button type="button" id="new-mock-btn" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold">
+                  ↻ New Mock Exam
+                </button>
+              </div>
+            </div>
+
+            <!-- 4-Card Timing & Proctoring Telemetry Strip -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Total Answering Time</div>
+                <div class="text-lg font-extrabold text-white mt-0.5">${Math.floor(totalSec / 60)}m ${totalSec % 60}s</div>
+              </div>
+              <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Avg Time / Question</div>
+                <div class="text-lg font-extrabold text-blue-300 mt-0.5">${avgSecPerQ} sec</div>
+              </div>
+              <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Accuracy Rate</div>
+                <div class="text-lg font-extrabold text-emerald-400 mt-0.5">${Math.round((r.correct / Math.max(1, m.questions.length)) * 100)}%</div>
+              </div>
+              <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Proctoring Integrity</div>
+                <div class="text-lg font-extrabold ${state.proctorState.warningCount >= 3 ? 'text-rose-400' : 'text-amber-300'} mt-0.5">
+                  ${state.proctorState.warningCount} / 3 Warnings
+                </div>
+              </div>
             </div>
           </div>
 
@@ -5055,14 +5462,18 @@ function formatReadableSyllabus(rawText) {
             ${m.questions.map((q, idx) => {
               const userAns = m.answers[q.id];
               const isRight = userAns === Number(q.answer);
+              const qTimeSec = m.questionTimings[q.id] || 0;
               const userAnsClean = userAns === undefined ? '— (Not Attempted)' : escapeHtml(stripLeadingOptionPrefix(String((q.options || [])[userAns] || '').replace(/<[^>]+>/g, '')));
               const officialAnsClean = escapeHtml(stripLeadingOptionPrefix(String((q.options || [])[q.answer] || '').replace(/<[^>]+>/g, '')));
               return `
                 <article class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3.5 print-card">
                   <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
                       <span class="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-extrabold text-xs">Question ${idx + 1}</span>
                       <span class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-bold text-xs">${escapeHtml(q.topic)}</span>
+                      <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono font-bold text-xs">
+                        ⏱ Time Spent: ${qTimeSec}s ${qTimeSec <= 35 ? '⚡ Fast' : qTimeSec > 75 ? '🐢 Slow' : '✓ Optimal'}
+                      </span>
                     </div>
                     <span class="text-xs font-extrabold px-3 py-1 rounded-full ${isRight ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : userAns === undefined ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}">
                       ${isRight ? '✓ CORRECT (+4 Marks)' : userAns === undefined ? 'NOT ANSWERED (0 Marks)' : '✕ INCORRECT'}
@@ -5093,9 +5504,13 @@ function formatReadableSyllabus(rawText) {
           </div>
         </div>
       `;
+      document.getElementById('speak-mock-report-btn')?.addEventListener('click', () => {
+        speakInterviewText(`Here is your Gemini performance summary. You scored ${r.pct} percent with ${r.correct} correct answers out of ${m.questions.length}. Your average answering speed was ${avgSecPerQ} seconds per question, with ${state.proctorState.warningCount} proctoring warnings.`);
+      });
       document.getElementById('new-mock-btn')?.addEventListener('click', () => {
         m.active = false;
         m.finished = false;
+        m.terminatedByProctor = false;
         renderMockTests();
       });
       document.getElementById('proceed-stage2-interview-btn')?.addEventListener('click', () => {
@@ -5106,14 +5521,14 @@ function formatReadableSyllabus(rawText) {
       return;
     }
 
-    // Setup View (Version 5 Proctored Exam + Complete Job Process Launcher)
+    // Setup View (Version 5 Proctored Exam + Camera ON/OFF Option + Technical Test Review Preset)
     container.innerHTML = `
       <div class="space-y-6">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 14 · Version 5 AI-Proctored Timed Mock Examinations &amp; Job Process Stage 1</span>
-            <h1 class="text-2xl font-extrabold text-slate-900">Configure Proctored Mock Examination (Face + Motion + Exit Guard)</h1>
-            <p class="text-xs text-slate-600 mt-1">Simulates real company online assessments (Mettl / AON / AMCAT / TCS iON) with live Webcam Face Detection, Motion Monitoring, and Fullscreen/Tab-Exit Warnings.</p>
+            <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Module 14 · Version 5 AI-Proctored Timed Mock Examinations &amp; Per-Question Timing Tracker</span>
+            <h1 class="text-2xl font-extrabold text-slate-900">Configure Proctored Mock Examination (Camera ON/OFF · 3-Warning Auto-End)</h1>
+            <p class="text-xs text-slate-600 mt-1">Tracks exact seconds spent per question, detects face &amp; motion when Camera is ON, warns on exit click, and auto-ends session if 3 warnings are exceeded.</p>
           </div>
         </div>
 
@@ -5122,8 +5537,9 @@ function formatReadableSyllabus(rawText) {
             <div>
               <label class="block text-xs font-bold uppercase text-slate-500 mb-1" for="mock-focus">Assessment Track</label>
               <select id="mock-focus" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                <option value="tech-review">⭐ Technical Test Review Pack (AGV, Pneumatics, Bearings, 5S &amp; Core)</option>
                 <option value="mixed">Actual Job Process Stage 1: Aptitude + Core Mechanical (80/20)</option>
-                <option value="technical">Core Mechanical Engineering Only (GATE / OEM Technical)</option>
+                <option value="technical">Core Mechanical Engineering Only (GATE / OEM / Naukri / Unstop)</option>
                 <option value="aptitude">Placement Aptitude Only (Bizotic / AM2 / AON / TCS NQT)</option>
               </select>
             </div>
@@ -5155,8 +5571,8 @@ function formatReadableSyllabus(rawText) {
               <span>Enable Negative Marking (+4 Correct, −1 Wrong)</span>
             </label>
             <label class="inline-flex items-center gap-2.5 text-xs font-bold text-blue-900 cursor-pointer">
-              <input id="mock-proctor-toggle" type="checkbox" checked class="rounded text-blue-600">
-              <span>📷 Enable Webcam Face Detector, Motion Sensor &amp; Exit Warning</span>
+              <input id="mock-proctor-toggle" type="checkbox" ${m.proctoringEnabled ? 'checked' : ''} class="rounded text-blue-600">
+              <span>📷 Camera ON/OFF: Enable AI Cheating Detector (3 Warnings Auto-End)</span>
             </label>
           </div>
 
@@ -5165,7 +5581,7 @@ function formatReadableSyllabus(rawText) {
               ⛶ Start Full-Screen Proctored Mock Exam →
             </button>
             <button type="button" id="launch-full-job-process-btn" class="py-3.5 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 font-extrabold text-xs sm:text-sm shadow transition">
-              🏢 Start Full 2-Stage Job Process (Round 1 Exam → Round 2 AI Interview)
+              🏢 Start Full Job Process (Round 1 Exam → Round 2 Gemini Interview)
             </button>
           </div>
         </div>
@@ -5180,29 +5596,47 @@ function formatReadableSyllabus(rawText) {
       const proc = Boolean(document.getElementById('mock-proctor-toggle')?.checked);
 
       const mcqPool = state.questions.filter(q => Array.isArray(q.options) && q.options.length >= 2 && q.answer !== undefined);
-      const filteredPool = mcqPool.filter(q => {
-        const isApt = /aptitude|logical|verbal|train/i.test(q.topic);
-        if (focus === 'technical') return !isApt;
-        if (focus === 'aptitude') return isApt;
-        return true;
-      });
+      let chosenQuestions = [];
 
-      const shuffled = filteredPool.slice().sort(() => Math.random() - 0.5).slice(0, count);
+      if (focus === 'tech-review') {
+        const revPool = mcqPool.filter(q => q.sourceType === 'technical-review');
+        const restTech = mcqPool.filter(q => q.sourceType !== 'technical-review' && !/aptitude|logical|verbal/i.test(q.topic)).sort(() => Math.random() - 0.5);
+        chosenQuestions = revPool.concat(restTech).slice(0, count);
+      } else {
+        const filteredPool = mcqPool.filter(q => {
+          const isApt = /aptitude|logical|verbal|train/i.test(q.topic);
+          if (focus === 'technical') return !isApt;
+          if (focus === 'aptitude') return isApt;
+          return true;
+        });
+        chosenQuestions = filteredPool.slice().sort(() => Math.random() - 0.5).slice(0, count);
+      }
+
       if (m.timerId) clearInterval(m.timerId);
 
       m.active = true;
       m.finished = false;
+      m.terminatedByProctor = false;
+      m.TerminationReason = '';
+      m.showExitConfirmModal = false;
       m.jobProcessMode = isJobPipeline;
       m.proctoringEnabled = proc;
-      m.questions = shuffled;
+      m.questions = chosenQuestions;
       m.answers = {};
+      m.questionTimings = {};
+      m.totalElapsedSec = 0;
       m.reviewFlags = {};
       m.currentIndex = 0;
       m.remainingSec = mins * 60;
+      m.initialDurationSec = mins * 60;
       m.negativeMarking = neg;
       m.warnings = 0;
+      m.maxWarnings = 3;
       m.warningLog = [];
       state.proctorState.warningCount = 0;
+      state.proctorState.maxWarnings = 3;
+      state.proctorState.bannerVisible = false;
+      state.proctorState.terminatedByLimit = false;
       state.proctorState.lastAlert = '';
       state.proctorState.events = [];
 
@@ -5215,6 +5649,13 @@ function formatReadableSyllabus(rawText) {
 
       m.timerId = setInterval(() => {
         m.remainingSec -= 1;
+        m.totalElapsedSec += 1;
+        const activeQ = m.questions[m.currentIndex];
+        if (activeQ) {
+          m.questionTimings[activeQ.id] = (m.questionTimings[activeQ.id] || 0) + 1;
+          const qSpentEl = document.getElementById('mock-q-spent-readout');
+          if (qSpentEl) qSpentEl.textContent = `⏳ This Q: ${m.questionTimings[activeQ.id]}s`;
+        }
         const timerEl = document.getElementById('mock-timer-readout');
         if (timerEl) {
           const mm = String(Math.floor(Math.max(0, m.remainingSec) / 60)).padStart(2, '0');
@@ -5236,6 +5677,7 @@ function formatReadableSyllabus(rawText) {
       clearInterval(m.timerId);
       m.timerId = null;
     }
+    m.showExitConfirmModal = false;
     stopProctorCameraAndDetector();
     try {
       if (document.fullscreenElement && document.exitFullscreen) {
@@ -5273,7 +5715,7 @@ function formatReadableSyllabus(rawText) {
     renderMockTests();
   }
 
-  // --- MODULE 15: PLACEMENT PREPARATION & VERSION 5 HUMAN-MOTION AI INTERVIEW ---
+  // --- MODULE 15: PLACEMENT PREPARATION, GEMINI HUMAN-LIKE INTERVIEW, HR & GD HUB ---
   const OFFICIAL_JOB_PORTALS = [
     // =========================================================================
     // 1. FIRST: OFFICIAL COLLEGE PLACEMENT PORTAL (SJCE MYSURU)
@@ -5599,6 +6041,50 @@ function formatReadableSyllabus(rawText) {
       logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/><path d="M18 34c4-14 8-14 10 0s6 14 10-8" fill="none" stroke="#4F46E5" stroke-width="4" stroke-linecap="round"/></svg>`
     },
 
+    {
+      id: 'pramp',
+      name: 'Pramp (Free Peer-to-Peer Live Mock Interviews)',
+      shortCode: 'PR',
+      url: 'https://www.pramp.com/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Live Video Mock Interviews (Featured in YouTube Short)',
+      roles: 'Live 2-Way Technical, Behavioral, System Design & Peer Mock Interviews',
+      badge: 'FREE LIVE MOCK INTERVIEW',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#4F46E5"/><text x="28" y="34" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="900" font-family="Inter,sans-serif">Pramp</text></svg>`
+    },
+    {
+      id: 'interviewing-io',
+      name: 'interviewing.io (Anonymous Engineer Mock Interviews)',
+      shortCode: 'i.io',
+      url: 'https://interviewing.io/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Anonymous Technical & FAANG/OEM Mock Interviews',
+      roles: 'Practice Technical & Algorithmic Interviews Anonymously with Senior Engineers',
+      badge: 'ANONYMOUS MOCK INTERVIEW',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0F172A"/><text x="28" y="34" text-anchor="middle" fill="#38BDF8" font-size="14" font-weight="900" font-family="Inter,sans-serif">i.io</text></svg>`
+    },
+    {
+      id: 'prepbunk',
+      name: 'Prepbunk (Mock Interviews & Placement Prep)',
+      shortCode: 'PB',
+      url: 'https://prepbunk.com/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'Campus Placement & Technical Mock Interviews',
+      roles: '1-on-1 Mock Interviews, Aptitude Drills & Company-Specific Interview Practice',
+      badge: 'PREPBUNK MOCK HUB',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#D97706"/><text x="28" y="35" text-anchor="middle" fill="#0F172A" font-size="16" font-weight="900" font-family="Inter,sans-serif">PB</text></svg>`
+    },
+    {
+      id: 'interviewbit',
+      name: 'InterviewBit (#1 Favourite Mock Interview & Prep Portal)',
+      shortCode: 'IB',
+      url: 'https://www.interviewbit.com/',
+      category: '3. Aptitude: IndiaBIX, PrepInsta & Practica',
+      location: 'AI & Peer Mock Interviews, HR Questions & Puzzles',
+      roles: 'Company-Wise Interview Questions, Quantitative Puzzles, HR Round & Mock Interviews',
+      badge: 'TOP FAVOURITE INTERVIEW PORTAL',
+      logoSvg: `<svg viewBox="0 0 56 56" class="w-12 h-12 rounded-2xl shadow-sm shrink-0"><rect width="56" height="56" rx="14" fill="#0284C7"/><text x="28" y="35" text-anchor="middle" fill="#FFFFFF" font-size="18" font-weight="900" font-family="Inter,sans-serif">IB</text></svg>`
+    },
     // =========================================================================
     // 4. FOURTH: CORE MECHANICAL OEM & CAMPUS RECRUITERS
     // =========================================================================
@@ -5747,7 +6233,174 @@ function formatReadableSyllabus(rawText) {
     }
   ];
 
+  // ==========================================================================
+  // EXPANDED INTERVIEW, HR, GD & TECHNICAL TEST REVIEW QUESTION BANKS
+  // (Includes GaugeHow 30+ Mech Qs, upGrad 40 HR Qs, GD Topics & User Technical Test Review)
+  // ==========================================================================
   const AI_INTERVIEW_QUESTION_BANK = {
+    'Technical Test Review: AGV, Pneumatics, Bearings, 5S & Core Mechanical': [
+      {
+        q: 'In your Technical Test, a pneumatic cylinder has bore D = 63 mm and operating pressure P = 6 bar. Walk me through how you convert 6 bar into N/mm² and calculate the exact extension force F = P × A.',
+        keywords: ['0.6', '3117', '1870', 'pi', 'bar', 'area', 'force'],
+        idealPoints: [
+          'Convert pressure consistently: 6 bar = 6 × 10⁵ Pa = 0.6 N/mm² (MPa).',
+          'Calculate piston cross-sectional area: A = π·D² / 4 = π × 63² / 4 = 3,117.25 mm².',
+          'Multiply for cylinder thrust force: F = P × A = 0.6 × 3,117.25 = 1,870.35 N ≈ 1,870 N.'
+        ],
+        studyTopic: 'Pneumatics & Fluid Power (Technical Test Review)',
+        studyGuideQuery: 'Pneumatic',
+        subjectId: 'fluid',
+        formula: 'F = P × (π·D² / 4) = 0.6 × 3117.25 = 1,870 N'
+      },
+      {
+        q: 'An AGV of mass m = 800 kg moves up a 3% gradient with rolling resistance C_rr = 0.02, wheel radius r = 0.15 m, efficiency η = 0.85, and a Two-Wheel-Drive (2WD) axle. How do you compute the torque required per driven wheel?',
+        keywords: ['156.96', '235.44', '392.4', '69.25', '34.63', '35', 'two-wheel', 'divide'],
+        idealPoints: [
+          'Rolling Resistance Force: F_r = C_rr·m·g = 0.02 × 800 × 9.81 = 156.96 N; Gradient Force (3%): F_g = 0.03 × 800 × 9.81 = 235.44 N → Total Force F = 392.4 N.',
+          'Total Axle Torque: T_total = (F × r) / η = (392.4 × 0.15) / 0.85 = 69.25 N·m.',
+          'Two-Wheel-Drive Split: Divide total torque by 2 → T_wheel = 69.25 / 2 = 34.63 N·m ≈ 35 N·m per wheel.'
+        ],
+        studyTopic: 'AGV Traction Dynamics & Machine Design',
+        studyGuideQuery: 'Technical Test Review',
+        subjectId: 'design',
+        formula: 'T_wheel = [m·g·(C_rr + grad)·r] / (2·η) ≈ 35 N·m'
+      },
+      {
+        q: 'A roller bearing has dynamic capacity C = 5000 N and equivalent radial load P = 2000 N running at N = 3000 rpm. Why does the life come out to 125 hours, and what is the complete 5S sequence in Lean Manufacturing?',
+        keywords: ['15.625', '22.56', '125', 'roller', '3000', 'sort', 'set', 'shine', 'standardize', 'sustain'],
+        idealPoints: [
+          'Bearing Life: For a ball bearing (p=3), L_10 = (5000/2000)³ = 15.625 Mrev. For a roller bearing (p=10/3), L_10 = (2.5)^(10/3) = 22.56 Mrev.',
+          'Operating Hours at 3000 rpm: L_10h = (22.56 × 10⁶) / (60 × 3000) = 125.3 hours ≈ 125 hours.',
+          'Complete 5S Sequence: 1. Sort (Seiri) → 2. Set in Order (Seiton) → 3. Shine (Seiso) → 4. Standardize (Seiketsu) → 5. Sustain (Shitsuke).'
+        ],
+        studyTopic: 'Bearings & 5S Lean Manufacturing',
+        studyGuideQuery: 'Bearing',
+        subjectId: 'design',
+        formula: 'L_10h = (C/P)^(10/3) × 10⁶ / (60·N) ≈ 125 hours'
+      },
+      {
+        q: 'For an AGV simply supported square beam (50 mm × 50 mm, span L = 1 m) carrying a central 100 kg load, how do you find the maximum bending stress σ_b? Also calculate the air consumption of a 50 mm bore × 200 mm stroke pneumatic cylinder at 10 cycles/min.',
+        keywords: ['981', '245250', '12', '11.77', '0.3927', '3.93', '7.85', '10'],
+        idealPoints: [
+          'Beam Bending Stress: W = 100×9.81 = 981 N; M = W·L/4 = 245,250 N·mm; Z = b·d²/6 = 50³/6 = 20,833 mm³ → σ_b = M/Z = 11.77 MPa ≈ 12 MPa.',
+          'Cylinder Air Consumption: Stroke volume V = (π×0.5²/4)×2 = 0.3927 L; at 10 cycles/min, single-acting = 3.93 L/min and double-acting = 7.85 L/min (≈ 10 L/min option).'
+        ],
+        studyTopic: 'Beam Bending & Pneumatic Air Consumption',
+        studyGuideQuery: 'Technical Test Review',
+        subjectId: 'som',
+        formula: 'σ_b = M/Z ≈ 12 MPa ; Q_air = 2·A·L·n ≈ 7.85 L/min (10 L/min)'
+      }
+    ],
+    '30+ Must-Know Mechanical Fresher Questions (GaugeHow & Playlist)': [
+      {
+        q: 'Explain Hooke’s Law, the difference between nominal stress and true strain, and why Annealing vs Hardening heat treatments produce opposite mechanical properties in steel.',
+        keywords: ['hooke', 'elastic', 'young', 'annealing', 'slow cooling', 'furnace', 'hardening', 'quenching', 'martensite'],
+        idealPoints: [
+          'Hooke’s Law: Within the proportional/elastic limit, stress is directly proportional to strain (σ = E·ε, where E is Young’s modulus).',
+          'Annealing: Heating steel above upper critical temperature followed by slow furnace cooling refines grain structure, relieves internal stresses, and softens the metal for machinability.',
+          'Hardening: Heating followed by rapid quenching (water/oil) traps carbon in a supersaturated Body-Centered Tetragonal (BCT) martensite phase, dramatically increasing hardness and wear resistance.'
+        ],
+        studyTopic: 'Strength of Materials & Heat Treatment',
+        studyGuideQuery: 'Mohr',
+        subjectId: 'som',
+        formula: 'σ = E · ε ; FoS_ductile = S_y / σ_allow ; FoS_brittle = S_ut / σ_allow'
+      },
+      {
+        q: 'State Bernoulli’s theorem and Reynolds number regimes in pipe flow. Why is cavitation destructive to a centrifugal pump impeller, and how does a Flywheel differ from a Governor?',
+        keywords: ['bernoulli', 'reynolds', '2000', '4000', 'dimensionless', 'cavitation', 'vapor pressure', 'flywheel', 'governor'],
+        idealPoints: [
+          'Bernoulli’s Equation & Reynolds Number: P/(ρg) + V²/(2g) + z = constant. Re = ρVD/μ is a dimensionless number (Re < 2000 laminar, Re > 4000 turbulent).',
+          'Pump Cavitation: When local suction pressure drops below saturation vapor pressure (P_v), vapor bubbles form and implode in high-pressure zones, causing pitting erosion.',
+          'Flywheel vs Governor: A flywheel minimizes cyclic intracycle speed fluctuations (ΔE = I·ω²·C_s) within each cycle, whereas a governor regulates mean engine speed by adjusting fuel supply when external load changes.'
+        ],
+        studyTopic: 'Fluid Mechanics, Turbomachines & DOM',
+        studyGuideQuery: 'Rankine',
+        subjectId: 'fluid',
+        formula: 'P + ½ρV² + ρgz = C ; Re = ρVD/μ (Unitless)'
+      },
+      {
+        q: 'Compare a 2-stroke vs 4-stroke IC engine, explain ASME Y14.5 GD&T vs coordinate tolerancing, and distinguish between Fatigue failure and Creep deformation.',
+        keywords: ['two-stroke', 'four-stroke', 'revolution', 'gd&t', 'datum', 'fatigue', 'cyclic', 'endurance', 'creep', 'temperature'],
+        idealPoints: [
+          '2-Stroke vs 4-Stroke: A 2-stroke engine completes 1 power stroke per crankshaft revolution (360°), while a 4-stroke engine completes 1 power stroke every 2 revolutions (720°).',
+          'GD&T: Geometric Dimensioning & Tolerancing controls form, orientation, location, and runout relative to functional datum reference frames, granting bonus tolerance at MMC.',
+          'Fatigue vs Creep: Fatigue is progressive localized crack propagation under cyclic/alternating stress below yield; Creep is slow, time-dependent plastic deformation under constant stress at elevated temperature (T > 0.4·T_melt).'
+        ],
+        studyTopic: 'IC Engines, GD&T & Material Failure',
+        studyGuideQuery: 'Inline-6',
+        subjectId: 'design',
+        formula: 'Δθ_4stroke = 720°/N_cyl ; T_homologous = T / T_m > 0.4 (Creep)'
+      }
+    ],
+    'Separate HR & Behavioral Interview Round (40 Questions · upGrad & Playlist)': [
+      {
+        q: '[HR Round Q1 & Q6] Tell me about yourself, and why should we hire you for this Graduate Engineer Trainee (GET) role?',
+        keywords: ['mechanical', 'sjce', 'internship', 'project', 'cad', 'problem solving', 'team', 'adaptable', 'value'],
+        idealPoints: [
+          'Structure (Present → Past → Future): Start with your B.E. Mechanical Engineering background at SJCE Mysuru, highlight your hands-on CAD/CAE (Creo, Siemens NX, ANSYS) and LisHawk morphing wing / JK Tyre utility plant internship experience.',
+          'Quantify Impact: Mention concrete engineering deliverables (e.g., boiler/compressor efficiency analysis, 3D assembly tolerances, full-stack engineering tools).',
+          'Close with Role Alignment: Connect your fast learning curve, disciplined execution, and practical shop-floor + simulation mindset directly to the company’s R&D/production goals.'
+        ],
+        studyTopic: 'HR Interview & Behavioral Communication',
+        studyGuideQuery: 'Technical Test Review',
+        subjectId: 'aptitude',
+        formula: 'STAR Method: Situation → Task → Action → Quantified Result'
+      },
+      {
+        q: '[HR Round Q3, Q4 & Q8] What are your greatest strengths and weaknesses, and how do you handle constructive criticism or tight project deadlines?',
+        keywords: ['strength', 'weakness', 'deadline', 'prioritize', 'feedback', 'schedule', 'improve', 'teamwork'],
+        idealPoints: [
+          'Strengths with Evidence: Highlight analytical troubleshooting, CAD/FEA modeling precision, and cross-functional collaboration backed by a real project example.',
+          'Authentic Weakness + Corrective Action: Share a real habit (e.g., spending extra time double-checking calculations or CAD constraints) and explain the checklist/time-boxing system you use to stay ahead of deadlines.',
+          'Handling Criticism & Pressure: Show emotional intelligence—listen actively, extract actionable improvements, break multi-task deadlines into priority milestones, and deliver early.'
+        ],
+        studyTopic: 'HR Behavioral & Conflict Resolution',
+        studyGuideQuery: 'Technical Test Review',
+        subjectId: 'aptitude',
+        formula: 'Weakness Formula = Genuine Trait + Proactive Mitigation Tool + Positive Outcome'
+      },
+      {
+        q: '[HR Round Q5, Q18 & Q19] Where do you see yourself in 5 years, how do you resolve a conflict with a teammate, and what are your salary/role expectations?',
+        keywords: ['5 years', 'growth', 'lead', 'conflict', 'data', 'listen', 'compromise', 'salary', 'industry standard'],
+        idealPoints: [
+          '5-Year Career Vision: Growing from a hands-on Graduate Engineer Trainee into a Senior Mechanical Design / Reliability Lead driving product innovation within the organization.',
+          'Team Conflict Resolution: Focus on data and objective engineering trade-offs rather than personal ego—listen to the teammate’s viewpoint, benchmark both designs, and agree on the solution that best meets quality and schedule.',
+          'Salary Expectations: State that your primary focus is steep technical growth and contributing measurable value, and you are comfortable with the company’s standard campus/GET compensation band.'
+        ],
+        studyTopic: 'HR Career Vision & Negotiation',
+        studyGuideQuery: 'Technical Test Review',
+        subjectId: 'aptitude',
+        formula: 'Conflict Resolution = Active Listening + Objective Data Test + Shared Team Goal'
+      }
+    ],
+    'Group Discussion (GD) Round Simulator & Campus GD Topics': [
+      {
+        q: '[Campus GD Topic 1] "Electric Vehicles (EVs) vs Hydrogen Internal Combustion & Hybrid Powertrains: Which is the realistic future for Indian Heavy Transport and Manufacturing?" — Present your opening stance, 2 data points, and a collaborative conclusion.',
+        keywords: ['ev', 'battery', 'hydrogen', 'hybrid', 'infrastructure', 'energy density', 'manufacturing', 'grid', 'conclusion'],
+        idealPoints: [
+          'Structured GD Opening (30 sec): Define the scope clearly—while battery EVs dominate 2-wheelers and urban passenger cars, heavy commercial trucks and off-highway equipment require high energy density.',
+          'Data-Backed Body Points: Cite power-to-weight ratios, charging infrastructure vs green hydrogen/hybrid transition, and localized thermal/battery manufacturing opportunities in India.',
+          'Collaborative GD Etiquette: Acknowledge fellow speakers ("Building on my colleague’s point..."), avoid interrupting, and summarize a balanced multi-powertrain roadmap.'
+        ],
+        studyTopic: 'Group Discussion (GD) & Industry 4.0',
+        studyGuideQuery: 'Inline-6',
+        subjectId: 'thermo',
+        formula: 'GD Framework = Hook/Definition + 2 Quantified Facts + Peer Bridge + Balanced Summary'
+      },
+      {
+        q: '[Campus GD Topic 2] "AI & Automation in Mechanical Manufacturing: Will Industry 4.0 and Generative CAD/FEA Replace Core Engineers or Multiply Their Productivity?" — Deliver your GD pitch.',
+        keywords: ['automation', 'ai', 'cad', 'fea', 'digital twin', 'upskilling', 'productivity', 'quality', 'human'],
+        idealPoints: [
+          'Core Thesis: AI and automation replace repetitive drafting, not physical first-principles engineering judgment.',
+          'Shop-Floor & Design Synergy: Predictive maintenance, CNC automation, and generative FEA still require mechanical engineers to define boundary conditions, material metallurgy, GD&T, and safety factors.',
+          'Actionable Takeaway: Engineers who combine core SOM/Thermo/Design fundamentals with digital tools lead Industry 4.0.'
+        ],
+        studyTopic: 'Group Discussion (GD) — AI in Manufacturing',
+        studyGuideQuery: 'Robot',
+        subjectId: 'mfg',
+        formula: 'GD Impact = Clear Stance + Real Industrial Example + Inclusive Summary'
+      }
+    ],
     'Mechanical Design / CAD / GD&T (Creo / NX)': [
       {
         q: 'In a shaft subjected to combined bending moment M = 600 N·m and torque T = 800 N·m, how do you size the shaft diameter using Maximum Shear Stress (Tresca) vs Distortion Energy (Von Mises) theory? Also explain where you apply ASME Y14.5 Cylindricity vs Runout on the bearing seats.',
@@ -5761,138 +6414,66 @@ function formatReadableSyllabus(rawText) {
         studyGuideQuery: 'Mohr',
         subjectId: 'design',
         formula: 'T_e = √(M² + T²) ; σ_vm = √(σ² + 3τ²) ≤ S_y / N'
-      },
-      {
-        q: 'If both the mean coil diameter (D) and wire diameter (d) of a close-coiled helical compression spring are doubled under the same axial load P and active turns n, how do the axial deflection (δ), spring stiffness (k), and torsional shear stress (τ) change?',
-        keywords: ['8pd', 'gd4', 'halved', 'half', '1/2', 'wahl', 'stiffness', 'doubled', 'shear stress'],
-        idealPoints: [
-          'Deflection Formula: δ = 8·P·D³·n / (G·d⁴). Scaling D→2D and d→2d gives δ_new/δ = 2³ / 2⁴ = 8/16 = 1/2 (Deflection is halved).',
-          'Spring Stiffness: k = P / δ = G·d⁴ / (8·D³·n) → Stiffness doubles (k_new = 2k).',
-          'Torsional Shear Stress: τ = K_w · 8·P·D / (π·d³) → Scaling gives 2¹ / 2³ = 1/4 (Stress reduces to one-fourth, with Wahl factor K_w unchanged since spring index C = D/d remains constant).'
-        ],
-        studyTopic: 'Helical Springs & Machine Design',
-        studyGuideQuery: 'Spring',
-        subjectId: 'design',
-        formula: 'δ = 8·P·D³·n / (G·d⁴) ; C = D / d'
-      },
-      {
-        q: 'While modeling a four-bar bird-wing morphing mechanism or quick-return linkage in Creo / Siemens NX, how do you verify Gruebler planar mobility (DOF) and Grashof’s law before running kinematic mechanism analysis?',
-        keywords: ['gruebler', '3(l-1)', 'grashof', 's + l', 'crank', 'rocker', 'drag link', 'mobility', 'dof'],
-        idealPoints: [
-          'Gruebler’s Equation for Planar Mobility: F = 3(L − 1) − 2·j₁ − j₂. For a 4-bar linkage (L = 4, j₁ = 4 revolute pins, j₂ = 0), F = 3(3) − 8 = 1 DOF (single actuator drives the wing sweep).',
-          'Grashof’s Criterion: s + l ≤ p + q (shortest + longest ≤ sum of other two links).',
-          'Inversions: Fixing the link adjacent to the shortest link (s) yields a Crank-Rocker mechanism suitable for continuous motor input converted to reciprocating flapping/morphing oscillation.'
-        ],
-        studyTopic: 'Kinematics of Machines (22ME310)',
-        studyGuideQuery: 'Gruebler',
-        subjectId: 'tom',
-        formula: 'F = 3(L − 1) − 2·j₁ − j₂ ; s + l ≤ p + q'
-      }
-    ],
-    'CAE / FEA / Structural & Modal Analysis (ANSYS)': [
-      {
-        q: 'A structural component is subjected to plane stresses σ_x = 1200 MPa (tensile), σ_y = 600 MPa (tensile), and τ_xy = 400 MPa. Walk through how you compute the principal stresses (σ₁, σ₂) and maximum in-plane shear stress (τ_max) to validate an ANSYS FEA contour plot.',
-        keywords: ['900', '500', '1400', '400', 'mohr', 'center', 'radius', 'principal', 'shear'],
-        idealPoints: [
-          'Center of Mohr’s Circle (Average Normal Stress): σ_avg = (1200 + 600) / 2 = 900 MPa.',
-          'Radius of Mohr’s Circle (Max In-Plane Shear Stress): R = τ_max = √[((1200 − 600)/2)² + 400²] = √(300² + 400²) = 500 MPa.',
-          'Principal Stresses: Major principal stress σ₁ = 900 + 500 = 1400 MPa; Minor principal stress σ₂ = 900 − 500 = 400 MPa (Absolute max shear = σ₁/2 = 700 MPa if σ₃ = 0).'
-        ],
-        studyTopic: 'Strength of Materials (22ME340)',
-        studyGuideQuery: 'Mohr',
-        subjectId: 'som',
-        formula: 'σ₁,₂ = (σ_x + σ_y)/2 ± √[((σ_x − σ_y)/2)² + τ_xy²]'
-      },
-      {
-        q: 'In Finite Element Analysis (22ME630), what is the 1D bar element stiffness matrix, how do you perform mesh convergence, and why does a linear triangular (CST) element exhibit shear locking in bending-dominated beams?',
-        keywords: ['ae/l', 'stiffness', 'mesh', 'convergence', 'cst', 'constant strain', 'shear locking', 'quadratic', 'singularity'],
-        idealPoints: [
-          '1D Bar Stiffness Matrix: [k]_e = (A·E / L) · [1, −1; −1, 1] derived from linear shape functions N₁ = 1 − x/L and N₂ = x/L.',
-          'Mesh Convergence: Refine element size h until peak Von Mises stress outside re-entrant corners stabilizes within 1–2% while checking elemental strain energy error.',
-          'Shear Locking: First-order Constant Strain Triangles (CST) and full-integration linear elements cannot curve without introducing parasitic shear strain, making the model artificially stiff (δ_FEA < δ_exact).'
-        ],
-        studyTopic: 'Finite Element Methods (22ME630)',
-        studyGuideQuery: 'Finite Element',
-        subjectId: 'hmt',
-        formula: '[k]_e = (A·E / L)[1, −1; −1, 1] ; [K]{u} = {F}'
-      }
-    ],
-    'Thermal / Boilers / Utility / Fluid & Turbomachinery': [
-      {
-        q: 'Drawing on industrial boiler and plant utility operations (such as JK Tyre VTP-1 utility systems), explain why the Rankine cycle is preferred over the Carnot cycle in steam power plants, and how economizers, air preheaters, and compressed-air intercooling improve plant efficiency.',
-        keywords: ['rankine', 'carnot', 'wet compression', 'isentropic', 'economizer', 'flue gas', 'intercooling', 'isothermal', 'npsh'],
-        idealPoints: [
-          'Carnot Impracticality in Steam: Compressing a two-phase wet vapor mixture (state 3→4) causes liquid droplet erosion, and isothermal heat addition above critical point is structurally unfeasible.',
-          'Boiler Heat Recovery: Economizers preheat feedwater using stack flue gas (reducing fuel consumption by ~1% for every 6°C rise in feedwater temperature); Air Preheaters boost combustion kinetics.',
-          'Compressed-Air Network Efficiency: Multi-stage compression with intercooling shifts the compression path from polytropic (PV^n = C) toward isothermal (PV = C), minimizing compressor shaft work.'
-        ],
-        studyTopic: 'Applied Thermodynamics & Turbomachines',
-        studyGuideQuery: 'Rankine',
-        subjectId: 'thermo',
-        formula: 'η_Rankine = [(h₁ − h₂) − v_f(P_b − P_c)] / (h₁ − h₄)'
-      },
-      {
-        q: 'Why is cavitation more dangerous at the suction eye of a centrifugal pump than at the exit of a pipe, and how do you verify NPSH margin using Bernoulli and Darcy-Weisbach head loss?',
-        keywords: ['npsh', 'vapor pressure', 'cavitation', 'suction', 'impeller', 'bernoulli', 'darcy', 'head loss'],
-        idealPoints: [
-          'Cavitation Mechanism: When local static pressure at the pump impeller eye drops below the liquid’s saturation vapor pressure (P_v), vapor bubbles form and violently implode in high-pressure zones, pitting the impeller.',
-          'NPSH Condition: Available Net Positive Suction Head must exceed Required NPSH: NPSH_A = P_atm/(ρg) − z_s − h_fs − P_v/(ρg) ≥ NPSH_R + safety margin.',
-          'Reducing Suction Loss: Increase suction pipe diameter D (since h_f ∝ 1/D⁵), minimize elbows, and lower pump elevation relative to the sump.'
-        ],
-        studyTopic: 'Fluid Mechanics & Hydraulic Machines (22ME320)',
-        studyGuideQuery: 'Venturi',
-        subjectId: 'fluid',
-        formula: 'NPSH_A = (P_atm − P_v)/(ρg) − z_s − h_fs ≥ NPSH_R'
-      }
-    ],
-    'Manufacturing / Production / Quality (Cpk & EOQ)': [
-      {
-        q: 'In orthogonal metal cutting (22ME540), explain Merchant’s Circle shear angle relationship and Taylor’s tool life equation (V·T^n = C). Why does cutting speed V reduce tool life much more drastically than feed f or depth of cut d?',
-        keywords: ['merchant', 'shear angle', 'taylor', 'vt^n', 'speed', 'temperature', 'chip', 'rake', 'friction'],
-        idealPoints: [
-          'Merchant’s Circle Relation: 2φ + β − α = 90° (where φ = shear plane angle, β = friction angle, α = tool rake angle; tan φ = r·cos α / (1 − r·sin α)).',
-          'Generalized Taylor Equation: V · T^n · f^a · d^b = C, where n ≈ 0.1–0.25 (HSS/Carbide) is smaller than exponents a and b.',
-          'Thermal Sensitivity: Since T ∝ 1 / V^(1/n), doubling cutting speed V reduces tool life by 2^(1/0.2) = 32× because cutting zone temperature rises steeply with V.'
-        ],
-        studyTopic: 'Manufacturing & Machine Tools (22ME540)',
-        studyGuideQuery: 'Merchant',
-        subjectId: 'mfg',
-        formula: '2φ + β − α = 90° ; V · T^n = C'
-      },
-      {
-        q: 'A machined shaft diameter has USL = 52.0 mm, LSL = 48.0 mm, process mean μ = 50.8 mm, and standard deviation σ = 0.5 mm. Calculate Cp and Cpk, diagnose whether the process is off-center, and state what corrective action you would take on the CNC lathe.',
-        keywords: ['cp', 'cpk', '1.33', '0.8', 'off-center', 'mean', 'offset', '3 sigma', '6 sigma'],
-        idealPoints: [
-          'Potential Capability Cp: Cp = (USL − LSL) / (6σ) = (52 − 48) / (6 × 0.5) = 4.0 / 3.0 = 1.33 (Spread is acceptable).',
-          'Actual Capability Cpk: Cpk = min[(52 − 50.8)/(3×0.5), (50.8 − 48)/(3×0.5)] = min[1.2/1.5, 2.8/1.5] = min[0.80, 1.87] = 0.80.',
-          'Engineering Diagnosis: Since Cp = 1.33 ≥ 1.33 but Cpk = 0.80 < 1.33, the tool wear has shifted the mean +0.8 mm toward USL. Adjust the CNC tool wear offset by −0.8 mm to center μ at 50.0 mm.'
-        ],
-        studyTopic: 'Metrology & Statistical Quality Control (22ME430)',
-        studyGuideQuery: 'Cpk',
-        subjectId: 'mfg',
-        formula: 'Cp = (USL − LSL)/(6σ) ; Cpk = min[(USL − μ)/(3σ), (μ − LSL)/(3σ)]'
-      }
-    ],
-    'Placement Quantitative & Analytical (Bizotic / AM2 / AON / TCS)': [
-      {
-        q: 'A fitness centre has 360 members paying ₹1,500/month. The owner cuts the monthly fee by 25% to attract new members while targeting a 10% increase in total monthly fee collection. Walk through your mental math shortcut to find how many new members must join.',
-        keywords: ['540000', '1125', '594000', '528', '168', 'ratio', '1.1', '0.75'],
-        idealPoints: [
-          'Ratio Scaling Shortcut (No large multiplication needed!): Since Revenue R = N × F, N_new / N_old = (R_new / R_old) ÷ (F_new / F_old) = 1.10 / 0.75 = 110 / 75 = 22 / 15.',
-          'New Total Members: N_new = 360 × (22 / 15) = 24 × 22 = 528 members.',
-          'Additional New Members Needed: ΔN = 528 − 360 = 168 new members (Trainer fixed salary is irrelevant distraction data).'
-        ],
-        studyTopic: 'Placement Quantitative Aptitude (Bizotic / AM2)',
-        studyGuideQuery: 'Alligation',
-        subjectId: 'aptitude',
-        formula: 'N_new = N_0 × (1 + g) / (1 − d) ; ΔN = N_new − N_0'
       }
     ]
   };
 
+  // Curated Video & Playlist Resource Cards requested by the user
+  const CURATED_INTERVIEW_VIDEOS_AND_PLAYLISTS = [
+    {
+      title: 'Top 4 Free Mock Interview Websites (Pramp, Interviewing.io, Prepbunk, InterviewBit)',
+      category: 'Mock Interview Portals Short',
+      url: 'https://youtube.com/shorts/QmsmScpkfos?si=9dHgDfsXlTsvMHT1',
+      badge: 'YOUTUBE SHORT · 4 PORTALS',
+      desc: 'Quick walkthrough of Pramp.com, Interviewing.io, Prepbunk.com, and InterviewBit.com — all 4 portals are integrated in the Quick-Launch Dock below.'
+    },
+    {
+      title: '30+ Must-Know Mechanical Engineering Interview Questions & Answers (GaugeHow)',
+      category: 'Mechanical Technical Interview',
+      url: 'https://youtu.be/Y_utWli0xnw?si=HxNbauvHrDlakUPS',
+      badge: '30+ MECH INTERVIEW Q&A',
+      desc: 'Covers Hooke’s law, 1st & 2nd Law of Thermodynamics, Bernoulli, Reynolds number, Cavitation, Annealing vs Hardening, GD&T, FoS, Flywheel vs Governor, Fatigue, Creep & 5S.'
+    },
+    {
+      title: 'Mechanical Engineering Core Interview Preparation Playlist',
+      category: 'Mechanical Technical Playlist',
+      url: 'https://www.youtube.com/playlist?list=PLS2rZuyyRkAesLJF957tJEeBLd3oDLWXU',
+      badge: 'TECHNICAL PLAYLIST',
+      desc: 'Complete video playlist for core mechanical engineering technical viva, SOM, thermodynamics, design, and manufacturing interview rounds.'
+    },
+    {
+      title: '40 Most Asked HR Interview Questions & Expert Answers (upGrad)',
+      category: 'Separate HR Round Prep',
+      url: 'https://youtu.be/zIm_k9j0C50?si=A23lK4Gz0XP0L7Hg',
+      badge: '40 HR QUESTIONS & ANSWERS',
+      desc: 'Complete 37-minute masterclass covering Tell Me About Yourself, Why Hire You, Strengths/Weaknesses, 5-Year Plan, Conflict Resolution, Salary Negotiation & 7 Body-Language Tips.'
+    },
+    {
+      title: 'Dedicated HR Interview & Behavioral Preparation Playlist',
+      category: 'Separate HR Round Playlist',
+      url: 'https://www.youtube.com/playlist?list=PLCcteVWYyBtvRRH_KN5kSCTnJGnXz_YSA',
+      badge: 'HR ROUND PLAYLIST',
+      desc: 'Step-by-step HR interview questions, behavioral STAR responses, communication etiquette, and campus placement HR round strategies.'
+    },
+    {
+      title: 'Quantitative & Logical Aptitude Placement Master Playlist',
+      category: 'Aptitude Video Playlist',
+      url: 'https://www.youtube.com/playlist?list=PLpyc33gOcbVBPgnZBqw7LjxMS4DSffD2G',
+      badge: 'APTITUDE PLAYLIST',
+      desc: 'Complete topic-wise video playlist for Quantitative Aptitude, Logical Reasoning, Time & Work, Trains, Alligation, Permutations, and Data Interpretation.'
+    },
+    {
+      title: 'SJCE Placement Voice Recordings & 250-Q SOM/Design/Mfg/Thermo Drive Folder',
+      category: 'Google Drive Voice & PDF Pack',
+      url: 'https://drive.google.com/drive/folders/1SM7dWs5dUmj_sY3BiK_5MsPlQL5njm2b?usp=drive_link',
+      badge: 'CONNECTED GOOGLE DRIVE',
+      desc: 'Contains SJCE placement call recordings (Amrutha, Shashank, Suhas, Omkar, Surya, Ravi) + 50-Q SOM, 50-Q Machine Design, 50-Q Manufacturing, 50-Q Industrial Engg & Thermo PDFs.'
+    }
+  ];
+
   // ==========================================================================
-  // VERSION 5 HUMAN-MOTION AI INTERVIEWER: SELECTABLE AUDIO VOICES, LIP-SYNC
-  // & BLINK FACE ANIMATION, SELF-GENERATING MOCK INTERVIEW SET & PROCTORING
+  // HUMAN-LIKE GEMINI LIVE INTERVIEWER: NATURAL CONVERSATIONAL TALK & RESPONSE,
+  // SELECTABLE AUDIO, LIP-SYNC FACE MOTION, TIMING TRACKER & CAMERA ON/OFF
   // ==========================================================================
   let activeSpeechRecognition = null;
   let availableBrowserVoices = [];
@@ -5914,61 +6495,72 @@ function formatReadableSyllabus(rawText) {
     } catch {}
   }
 
-  // Dynamically self-generate a fresh multi-question interview set (like Mock Test)
-  // combining curated viva questions AND dynamically converted questions from the 1,284+ question bank!
   function generateSelfGeneratingInterviewSet(count = 5) {
     const iv = state.interviewState;
     const track = iv.track;
     const curatedPool = [];
-    Object.entries(AI_INTERVIEW_QUESTION_BANK).forEach(([tName, arr]) => {
-      if (track === 'Self-Generated Mixed Core + Aptitude (Like Mock Test)' || tName === track) {
-        arr.forEach(item => curatedPool.push(Object.assign({}, item, { sourceTrack: tName })));
-      }
-    });
 
-    // Also convert random technical & aptitude questions from state.questions into live Viva Interview prompts
-    const dynamicCandidates = state.questions.filter(q => q && q.text && q.text.length > 25 && q.explain);
-    const shuffledDyn = dynamicCandidates.slice().sort(() => Math.random() - 0.5).slice(0, Math.max(8, count * 2));
+    if (iv.roundMode === 'hr') {
+      (AI_INTERVIEW_QUESTION_BANK['Separate HR & Behavioral Interview Round (40 Questions · upGrad & Playlist)'] || []).forEach(item => curatedPool.push(item));
+    } else if (iv.roundMode === 'gd') {
+      (AI_INTERVIEW_QUESTION_BANK['Group Discussion (GD) Round Simulator & Campus GD Topics'] || []).forEach(item => curatedPool.push(item));
+    } else {
+      Object.entries(AI_INTERVIEW_QUESTION_BANK).forEach(([tName, arr]) => {
+        if (track === 'Self-Generated Mixed Core + Aptitude (Like Mock Test)' || tName === track) {
+          arr.forEach(item => curatedPool.push(Object.assign({}, item, { sourceTrack: tName })));
+        }
+      });
+    }
 
-    const synthesizedViva = shuffledDyn.map(q => {
-      const cleanPrompt = String(q.text).replace(/<[^>]+>/g, '').trim();
-      const cleanExplain = String(q.explain || '').replace(/<[^>]+>/g, '').trim();
-      const officialOpt = (Array.isArray(q.options) && q.answer !== undefined && q.options[q.answer])
-        ? stripLeadingOptionPrefix(String(q.options[q.answer]).replace(/<[^>]+>/g, ''))
-        : '';
-      const words = `${cleanExplain} ${officialOpt} ${q.topic || ''}`
-        .toLowerCase()
-        .replace(/[^a-z0-9.\s]/g, ' ')
-        .split(/\s+/)
-        .filter(w => w.length >= 4 && !['with', 'from', 'that', 'this', 'have', 'will', 'therefore', 'given', 'where'].includes(w));
-      const uniqKw = Array.from(new Set(words)).slice(0, 8);
+    // Also pull dynamic questions from state.questions when in technical or mixed mode
+    let combinedPool = curatedPool.slice();
+    if (iv.roundMode !== 'hr' && iv.roundMode !== 'gd') {
+      const dynamicCandidates = state.questions.filter(q => q && q.text && q.text.length > 25 && q.explain);
+      const shuffledDyn = dynamicCandidates.slice().sort(() => Math.random() - 0.5).slice(0, Math.max(6, count * 2));
+      const synthesizedViva = shuffledDyn.map(q => {
+        const cleanPrompt = String(q.text).replace(/<[^>]+>/g, '').trim();
+        const cleanExplain = String(q.explain || '').replace(/<[^>]+>/g, '').trim();
+        const officialOpt = (Array.isArray(q.options) && q.answer !== undefined && q.options[q.answer])
+          ? stripLeadingOptionPrefix(String(q.options[q.answer]).replace(/<[^>]+>/g, ''))
+          : '';
+        const words = `${cleanExplain} ${officialOpt} ${q.topic || ''}`
+          .toLowerCase()
+          .replace(/[^a-z0-9.\s]/g, ' ')
+          .split(/\s+/)
+          .filter(w => w.length >= 4 && !['with', 'from', 'that', 'this', 'have', 'will', 'therefore', 'given', 'where'].includes(w));
+        const uniqKw = Array.from(new Set(words)).slice(0, 8);
 
-      return {
-        q: `[Self-Generated Panel Question · ${q.topic || 'Core Mechanical'}] ${cleanPrompt} Walk the panel through your governing formula, physical reasoning, and final result.`,
-        keywords: uniqKw.length ? uniqKw : ['formula', 'stress', 'efficiency', 'ratio', 'energy'],
-        idealPoints: [
-          officialOpt ? `Target Analytical Result / Conclusion: ${officialOpt}.` : 'State the governing conservation law and boundary conditions clearly.',
-          cleanExplain ? `Step-by-Step Derivation: ${cleanExplain}` : 'Substitute values in consistent SI units (N, m, Pa, J, K) and verify order of magnitude.',
-          `Core Concept Tested: ${q.topic || 'Mechanical Engineering'} (${q.difficulty || 'Placement Standard'}).`
-        ],
-        studyTopic: q.topic || 'Mechanical Engineering Core',
-        studyGuideQuery: (q.topic || 'Mohr').split(' ')[0],
-        subjectId: 'som',
-        formula: cleanExplain.slice(0, 110) || 'Apply governing SI conservation equation'
-      };
-    });
+        return {
+          q: `${cleanPrompt} Walk me through the governing formula, unit conversions, and final answer.`,
+          keywords: uniqKw.length ? uniqKw : ['formula', 'stress', 'efficiency', 'ratio', 'energy'],
+          idealPoints: [
+            officialOpt ? `Verified Result: ${officialOpt}.` : 'State the governing conservation law and boundary conditions clearly.',
+            cleanExplain ? `Step-by-Step Calculation: ${cleanExplain}` : 'Substitute values in consistent SI units (N, mm, MPa, J, K).',
+            `Topic: ${q.topic || 'Mechanical Engineering'}.`
+          ],
+          studyTopic: q.topic || 'Mechanical Engineering Core',
+          studyGuideQuery: (q.topic || 'Mohr').split(' ')[0],
+          subjectId: 'som',
+          formula: cleanExplain.slice(0, 120) || 'Apply governing SI equation'
+        };
+      });
+      combinedPool = curatedPool.concat(synthesizedViva);
+    }
 
-    const combinedPool = curatedPool.concat(synthesizedViva).sort(() => Math.random() - 0.5);
     iv.generatedQuestions = combinedPool.slice(0, Math.max(1, Number(count || iv.sessionQuestionCount || 5)));
     iv.sessionQuestionCount = iv.generatedQuestions.length;
     iv.qIndex = 0;
     iv.sessionScores = {};
     iv.sessionAnswers = {};
+    iv.sessionTimings = {};
+    iv.totalInterviewSec = 0;
     iv.evaluated = false;
     iv.lastEvaluation = null;
     iv.answerText = '';
     iv.coachFeedbackHtml = '';
     iv.sessionFinished = false;
+    iv.terminatedByProctor = false;
+    iv.showExitConfirmModal = false;
     iv.qTimerSec = 180;
     return iv.generatedQuestions;
   }
@@ -5992,9 +6584,9 @@ function formatReadableSyllabus(rawText) {
       const jawEl = document.getElementById('avatar-jaw-group');
       const eyesEl = document.getElementById('avatar-eyes-group');
       const headEl = document.getElementById('avatar-head-group');
+      const geminiOrbEl = document.getElementById('gemini-live-orb');
       const waveBars = document.querySelectorAll('.avatar-wave-bar');
 
-      // Lip-sync mouth opening when AI interviewer is speaking
       if (iv.isSpeaking) {
         const openH = [3, 9, 5, 12, 4, 10, 6][tick % 7];
         if (mouthEl) {
@@ -6003,6 +6595,7 @@ function formatReadableSyllabus(rawText) {
           mouthEl.setAttribute('fill', '#7F1D1D');
         }
         if (jawEl) jawEl.setAttribute('transform', `translate(0, ${(openH * 0.25).toFixed(1)})`);
+        if (geminiOrbEl) geminiOrbEl.style.transform = `scale(${(1.04 + 0.14 * Math.sin(tick * 0.7)).toFixed(2)})`;
         waveBars.forEach((bar, idx) => {
           const h = 8 + ((tick * 7 + idx * 11) % 24);
           bar.style.height = `${h}px`;
@@ -6014,19 +6607,18 @@ function formatReadableSyllabus(rawText) {
           mouthEl.setAttribute('fill', '#991B1B');
         }
         if (jawEl) jawEl.setAttribute('transform', 'translate(0, 0)');
+        if (geminiOrbEl) geminiOrbEl.style.transform = iv.isListening ? `scale(${(1.02 + 0.08 * Math.sin(tick * 0.5)).toFixed(2)})` : 'scale(1)';
         waveBars.forEach((bar, idx) => {
           const h = iv.isListening ? (6 + ((tick * 5 + idx * 9) % 18)) : 4;
           bar.style.height = `${h}px`;
         });
       }
 
-      // Natural human eye blink every ~28 ticks (~3.1 seconds)
       const isBlinking = (tick % 28 === 0) || (tick % 28 === 1);
       if (eyesEl) {
         eyesEl.setAttribute('transform', isBlinking ? 'scale(1, 0.12)' : 'scale(1, 1)');
       }
 
-      // Subtle human head nod/tilt when listening or speaking
       if (headEl) {
         const nodY = iv.isListening ? (Math.sin(tick * 0.35) * 2.2) : (iv.isSpeaking ? Math.sin(tick * 0.45) * 1.5 : 0);
         const tiltDeg = Math.sin(tick * 0.18) * 1.4;
@@ -6036,11 +6628,13 @@ function formatReadableSyllabus(rawText) {
   }
 
   function renderHumanInterviewerAvatarSvg(iv) {
-    const personaLabel = iv.voicePersona === 'female-panel'
-      ? 'Dr. Ananya Rao (Senior R&D & HR Panelist)'
-      : iv.voicePersona === 'fast-tech'
-        ? 'Prof. Vikram Prabhu (Principal CAE Examiner)'
-        : 'Dr. Rajeev Narayanan (Chief Mechanical Panelist)';
+    const personaLabel = iv.voicePersona === 'gemini-live'
+      ? '✨ Gemini Live Human-Like AI Interviewer (Conversational)'
+      : iv.voicePersona === 'female-panel'
+        ? 'Dr. Ananya Rao (Senior HR & R&D Panelist)'
+        : iv.voicePersona === 'fast-tech'
+          ? 'Prof. Vikram Prabhu (Principal Technical Examiner)'
+          : 'Dr. Rajeev Narayanan (Chief Mechanical Panelist)';
 
     const hairPath = iv.voicePersona === 'female-panel'
       ? '<path d="M58 95 C55 42, 165 42, 162 95 C168 125, 166 155, 154 168 C150 135, 148 110, 145 95 C130 72, 90 72, 75 95 C72 110, 70 135, 66 168 C54 155, 52 125, 58 95 Z" fill="#1E293B"/>'
@@ -6049,45 +6643,38 @@ function formatReadableSyllabus(rawText) {
     return `
       <div class="bg-slate-900 text-white rounded-2xl border border-blue-800/80 p-4 shadow-xl flex flex-col justify-between space-y-3">
         <div class="flex items-center justify-between gap-2">
-          <div>
-            <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 block">🧑 Human-Motion AI Panelist</span>
-            <h3 class="text-xs sm:text-sm font-extrabold text-white">${escapeHtml(personaLabel)}</h3>
+          <div class="flex items-center gap-2">
+            <div id="gemini-live-orb" class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-500 to-emerald-400 flex items-center justify-center text-xs font-black shadow-lg transition-transform">✦</div>
+            <div>
+              <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 block">🧑 Human-Like Gemini Live Interviewer</span>
+              <h3 class="text-xs sm:text-sm font-extrabold text-white">${escapeHtml(personaLabel)}</h3>
+            </div>
           </div>
           <span id="iv-voice-status-badge" class="px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[10px]">
-            ${iv.isSpeaking ? '🔊 Speaking (Lip-Sync ON)' : iv.isListening ? '🔴 Listening & Nodding' : '🎙️ Ready'}
+            ${iv.isSpeaking ? '🔊 Gemini Talking (Lip-Sync)' : iv.isListening ? '🔴 Listening & Nodding' : '🎙️ Ready to Talk'}
           </span>
         </div>
 
         <!-- Animated Human Interviewer Portrait with Lip-Sync, Eye Blink & Head Motion -->
         <div class="relative bg-gradient-to-b from-slate-800 to-slate-950 rounded-2xl border border-slate-700 p-2 flex items-center justify-center overflow-hidden">
           <svg viewBox="0 0 220 195" class="w-44 h-40">
-            <!-- Studio Backdrop Glow -->
-            <circle cx="110" cy="105" r="76" fill="rgba(37,99,235,0.14)"/>
-            <!-- Shoulders & Formal Blazer + Tie -->
+            <circle cx="110" cy="105" r="76" fill="rgba(37,99,235,0.16)"/>
             <path d="M36 195 C42 152, 75 144, 110 144 C145 144, 178 152, 184 195 Z" fill="#0F172A" stroke="#334155" stroke-width="2"/>
             <polygon points="94,145 110,185 126,145" fill="#F8FAFC"/>
             <polygon points="106,152 114,152 116,188 104,188" fill="#2563EB"/>
-            <!-- Neck -->
             <rect x="97" y="126" width="26" height="24" rx="8" fill="#F1C27D"/>
 
-            <!-- Animated Head Group (Nods & Tilts Naturally) -->
             <g id="avatar-head-group" transform="translate(0,0)">
-              <!-- Ears -->
               <ellipse cx="64" cy="102" rx="6" ry="11" fill="#E0AC69"/>
               <ellipse cx="156" cy="102" rx="6" ry="11" fill="#E0AC69"/>
-              <!-- Face Contour -->
               <rect x="66" y="54" width="88" height="84" rx="38" fill="#F1C27D" stroke="#D19A56" stroke-width="1.5"/>
-              <!-- Hair -->
               ${hairPath}
-              <!-- Eyebrows -->
               <path d="M80 86 Q91 81 101 85" fill="none" stroke="#1E293B" stroke-width="3" stroke-linecap="round"/>
               <path d="M119 85 Q129 81 140 86" fill="none" stroke="#1E293B" stroke-width="3" stroke-linecap="round"/>
-              <!-- Engineering Glasses Frame -->
               <rect x="76" y="89" width="28" height="17" rx="4" fill="rgba(56,189,248,0.12)" stroke="#334155" stroke-width="2"/>
               <rect x="116" y="89" width="28" height="17" rx="4" fill="rgba(56,189,248,0.12)" stroke="#334155" stroke-width="2"/>
               <line x1="104" y1="96" x2="116" y2="96" stroke="#334155" stroke-width="2"/>
 
-              <!-- Blinking Eyes Group -->
               <g id="avatar-eyes-group" style="transform-origin: 110px 97px;">
                 <ellipse cx="90" cy="97" rx="6.5" ry="4.5" fill="#FFFFFF"/>
                 <circle cx="90" cy="97" r="3" fill="#0F172A"/>
@@ -6097,10 +6684,8 @@ function formatReadableSyllabus(rawText) {
                 <circle cx="131.2" cy="95.8" r="1" fill="#FFFFFF"/>
               </g>
 
-              <!-- Nose -->
               <path d="M110 96 L107 111 L114 112" fill="none" stroke="#C68642" stroke-width="2" stroke-linecap="round"/>
 
-              <!-- Animated Jaw & Lip-Sync Mouth -->
               <g id="avatar-jaw-group">
                 <ellipse id="avatar-mouth-shape" cx="110" cy="123" rx="10" ry="2.2" fill="#991B1B" stroke="#7F1D1D" stroke-width="1.5"/>
                 <path d="M103 122 Q110 124 117 122" fill="none" stroke="#FCA5A5" stroke-width="1"/>
@@ -6108,26 +6693,26 @@ function formatReadableSyllabus(rawText) {
             </g>
           </svg>
 
-          <!-- Live Audio Waveform Visualizer Overlay -->
           <div class="absolute bottom-2 right-2.5 flex items-end gap-1 h-7 px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-800">
             ${[1, 2, 3, 4, 5, 6].map(() => `<span class="avatar-wave-bar w-1 bg-blue-400 rounded-full transition-all" style="height: 5px;"></span>`).join('')}
           </div>
         </div>
 
-        <!-- Selectable Audio Voice, Persona & Speed Controls -->
+        <!-- Selectable Audio Voice & Gemini Persona Controls -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
           <div>
-            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5" for="iv-persona-select">Interviewer Voice Persona</label>
+            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5" for="iv-persona-select">Interviewer Persona &amp; Style</label>
             <select id="iv-persona-select" class="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] font-bold text-white">
+              <option value="gemini-live" ${iv.voicePersona === 'gemini-live' ? 'selected' : ''}>✨ Gemini Live Natural Assistant (Conversational)</option>
               <option value="male-panel" ${iv.voicePersona === 'male-panel' ? 'selected' : ''}>🎙️ Male Chief Panelist (Deep 0.92p)</option>
-              <option value="female-panel" ${iv.voicePersona === 'female-panel' ? 'selected' : ''}>🎙️ Female R&amp;D Panelist (Clear 1.12p)</option>
+              <option value="female-panel" ${iv.voicePersona === 'female-panel' ? 'selected' : ''}>🎙️ Female HR &amp; R&amp;D Panelist (1.12p)</option>
               <option value="fast-tech" ${iv.voicePersona === 'fast-tech' ? 'selected' : ''}>🎙️ Fast Technical Examiner (1.12×)</option>
             </select>
           </div>
           <div>
             <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5" for="iv-browser-voice-select">Selectable System Audio Voice</label>
             <select id="iv-browser-voice-select" class="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] font-semibold text-white">
-              <option value="auto-in">Auto English (India / Panel Default)</option>
+              <option value="auto-in">Auto Natural English (India / Gemini Default)</option>
               ${refreshBrowserVoices().map(v => `
                 <option value="${escapeHtml(v.voiceURI)}" ${iv.selectedVoiceURI === v.voiceURI ? 'selected' : ''}>
                   ${escapeHtml(v.name)} (${escapeHtml(v.lang)})
@@ -6149,7 +6734,7 @@ function formatReadableSyllabus(rawText) {
       window.speechSynthesis.cancel();
       const iv = state.interviewState;
       const cleanSpeech = String(textToRead || '')
-        .replace(/\[Self-Generated Panel Question[^\]]*\]/g, '')
+        .replace(/\[[^\]]*\]/g, '')
         .replace(/σ_x/g, 'sigma x')
         .replace(/σ_y/g, 'sigma y')
         .replace(/τ_xy/g, 'tau x y')
@@ -6170,16 +6755,19 @@ function formatReadableSyllabus(rawText) {
         const matchedVoice = voices.find(v => v.voiceURI === iv.selectedVoiceURI || v.name === iv.selectedVoiceURI);
         if (matchedVoice) utter.voice = matchedVoice;
       } else if (voices.length) {
-        const preferred = voices.find(v => /en-IN|India/i.test(v.lang)) || voices.find(v => /en/i.test(v.lang)) || voices[0];
+        const preferred = voices.find(v => /Google|Natural|en-IN|India/i.test(v.name + ' ' + v.lang)) || voices.find(v => /en/i.test(v.lang)) || voices[0];
         if (preferred) utter.voice = preferred;
       }
 
-      if (iv.voicePersona === 'male-panel') {
+      if (iv.voicePersona === 'gemini-live') {
+        utter.pitch = 1.03;
+        utter.rate = 1.02;
+      } else if (iv.voicePersona === 'male-panel') {
         utter.pitch = 0.90;
-        utter.rate = iv.speechRate || 0.98;
+        utter.rate = 0.98;
       } else if (iv.voicePersona === 'female-panel') {
         utter.pitch = 1.14;
-        utter.rate = iv.speechRate || 1.0;
+        utter.rate = 1.0;
       } else {
         utter.pitch = 1.0;
         utter.rate = 1.12;
@@ -6188,7 +6776,7 @@ function formatReadableSyllabus(rawText) {
       iv.isSpeaking = true;
       const statusBadge = document.getElementById('iv-voice-status-badge');
       if (statusBadge) {
-        statusBadge.textContent = '🔊 Speaking (Lip-Sync ON)';
+        statusBadge.textContent = '🔊 Gemini Talking (Lip-Sync)';
         statusBadge.className = 'px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 font-extrabold text-[10px] animate-pulse';
       }
 
@@ -6240,11 +6828,11 @@ function formatReadableSyllabus(rawText) {
       try { activeSpeechRecognition.stop(); } catch {}
       iv.isListening = false;
       if (micBtn) {
-        micBtn.innerHTML = '🎤 Mic Dictation + Text';
+        micBtn.innerHTML = '🎤 Speak to Gemini (Mic + Text)';
         micBtn.className = 'px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5';
       }
       if (statusBadge) {
-        statusBadge.textContent = '✓ Voice + Text Combined';
+        statusBadge.textContent = '✓ Voice Captured';
         statusBadge.className = 'px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold text-[10px]';
       }
       return;
@@ -6262,7 +6850,7 @@ function formatReadableSyllabus(rawText) {
       iv.isListening = true;
 
       if (micBtn) {
-        micBtn.innerHTML = '⏹ Stop Mic (Streaming to Text Box...)';
+        micBtn.innerHTML = '⏹ Stop Mic (Listening Live...)';
         micBtn.className = 'px-4 py-2 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg animate-pulse flex items-center gap-1.5';
       }
       if (statusBadge) {
@@ -6285,7 +6873,7 @@ function formatReadableSyllabus(rawText) {
       rec.onerror = () => {
         iv.isListening = false;
         if (micBtn) {
-          micBtn.innerHTML = '🎤 Mic Dictation + Text';
+          micBtn.innerHTML = '🎤 Speak to Gemini (Mic + Text)';
           micBtn.className = 'px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5';
         }
       };
@@ -6293,7 +6881,7 @@ function formatReadableSyllabus(rawText) {
       rec.onend = () => {
         iv.isListening = false;
         if (micBtn) {
-          micBtn.innerHTML = '🎤 Mic Dictation + Text';
+          micBtn.innerHTML = '🎤 Speak to Gemini (Mic + Text)';
           micBtn.className = 'px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5';
         }
       };
@@ -6311,8 +6899,8 @@ function formatReadableSyllabus(rawText) {
     const wordCount = clean ? clean.split(/\s+/).length : 0;
 
     const kwRatio = matchedKeywords.length / Math.max(1, (qItem.keywords || []).length);
-    const lengthBonus = Math.min(25, Math.round(wordCount / 2.2));
-    const rawScore = clean.length < 8 ? 0 : Math.min(98, Math.round(kwRatio * 75 + lengthBonus));
+    const lengthBonus = Math.min(25, Math.round(wordCount / 2.0));
+    const rawScore = clean.length < 6 ? 0 : Math.min(98, Math.round(kwRatio * 75 + lengthBonus));
 
     const missingKeywords = (qItem.keywords || []).filter(kw => !lower.includes(kw.toLowerCase()));
 
@@ -6321,17 +6909,25 @@ function formatReadableSyllabus(rawText) {
       return hay.includes((qItem.studyGuideQuery || 'Mohr').toLowerCase()) || hay.includes((qItem.studyTopic || 'Design').split(' ')[0].toLowerCase());
     }).slice(0, 3);
 
+    // Human-like conversational Gemini response
+    const humanGreeting = rawScore >= 75
+      ? `Great job on that explanation, Girish! You hit the core concepts (${matchedKeywords.slice(0, 4).join(', ')}) right on the mark.`
+      : rawScore >= 45
+        ? `Good effort! You're on the right track with ${matchedKeywords.length ? matchedKeywords.slice(0, 3).join(', ') : 'the concept'}, and adding the exact formula and units will make your answer 10 out of 10.`
+        : `Let's walk through this together! The key trick here is applying ${qItem.formula || 'the governing equation'} with consistent SI units.`;
+
     return {
       score: rawScore,
       wordCount,
       matchedKeywords,
       missingKeywords,
+      humanConversationalReply: humanGreeting,
       strengths: matchedKeywords.length
-        ? `Strong technical keywords covered: ${matchedKeywords.join(', ')}.`
-        : 'Attempt recorded. State the exact governing formula, SI units, and physical mechanism for higher panel marks.',
+        ? `${humanGreeting} Matched keywords: ${matchedKeywords.join(', ')}.`
+        : `${humanGreeting}`,
       gaps: missingKeywords.length
-        ? `Key concepts to include for 10/10 panel score: ${missingKeywords.slice(0, 6).join(', ')}.`
-        : 'Excellent coverage of all expected engineering terminology!',
+        ? `Include these key terms & numbers next time: ${missingKeywords.slice(0, 6).join(', ')}.`
+        : 'Complete coverage of all expected panel points!',
       recommendedGuides,
       qItem
     };
@@ -6344,11 +6940,18 @@ function formatReadableSyllabus(rawText) {
     interviewQuestionTimerId = setInterval(() => {
       if (!iv.activeFullscreen || iv.sessionFinished) return;
       iv.qTimerSec = Math.max(0, iv.qTimerSec - 1);
+      iv.totalInterviewSec = (iv.totalInterviewSec || 0) + 1;
+      iv.sessionTimings[iv.qIndex] = (iv.sessionTimings[iv.qIndex] || 0) + 1;
+
       const tEl = document.getElementById('iv-q-timer-readout');
+      const spentEl = document.getElementById('iv-q-spent-readout');
       if (tEl) {
         const mm = String(Math.floor(iv.qTimerSec / 60)).padStart(2, '0');
         const ss = String(iv.qTimerSec % 60).padStart(2, '0');
         tEl.textContent = `⏱ ${mm}:${ss}`;
+      }
+      if (spentEl) {
+        spentEl.textContent = `⏳ Answered in: ${iv.sessionTimings[iv.qIndex]}s`;
       }
     }, 1000);
   }
@@ -6357,8 +6960,14 @@ function formatReadableSyllabus(rawText) {
     const iv = state.interviewState;
     iv.activeFullscreen = true;
     iv.sessionFinished = false;
+    iv.terminatedByProctor = false;
+    iv.showExitConfirmModal = false;
     state.proctorState.warningCount = 0;
+    state.proctorState.maxWarnings = 3;
+    state.proctorState.bannerVisible = false;
+    state.proctorState.terminatedByLimit = false;
     state.proctorState.lastAlert = '';
+
     if (!Array.isArray(iv.generatedQuestions) || !iv.generatedQuestions.length) {
       generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
     }
@@ -6368,7 +6977,8 @@ function formatReadableSyllabus(rawText) {
       }
     } catch {}
     syncExamFullscreenMode(true);
-    startProctorCameraAndDetector();
+    if (iv.proctoringEnabled) startProctorCameraAndDetector();
+    else stopProctorCameraAndDetector();
     startHumanAvatarAnimationLoop();
     startInterviewQuestionTimer();
     renderPlacementPrep();
@@ -6378,7 +6988,7 @@ function formatReadableSyllabus(rawText) {
     if (startMicImmediately) {
       setTimeout(() => toggleVoiceMicrophoneInput(), 250);
     } else if (iv.autoSpeak && activeQ) {
-      setTimeout(() => speakInterviewText(`Question ${iv.qIndex + 1} of ${trackQuestions.length}. ${activeQ.q}`), 300);
+      setTimeout(() => speakInterviewText(`Hi Girish, welcome to your ${iv.roundMode === 'hr' ? 'HR Interview' : iv.roundMode === 'gd' ? 'Group Discussion' : 'Technical Interview'} session. Here is Question ${iv.qIndex + 1}. ${activeQ.q}`), 300);
     }
   }
 
@@ -6396,6 +7006,7 @@ function formatReadableSyllabus(rawText) {
       interviewQuestionTimerId = null;
     }
     stopProctorCameraAndDetector();
+    state.interviewState.showExitConfirmModal = false;
     state.interviewState.isListening = false;
     state.interviewState.activeFullscreen = false;
     try {
@@ -6411,11 +7022,10 @@ function formatReadableSyllabus(rawText) {
     const iv = state.interviewState;
     const trackQuestions = getActiveInterviewQuestions();
     iv.qIndex = Math.min(Math.max(0, iv.qIndex), Math.max(0, trackQuestions.length - 1));
-    const activeQ = trackQuestions[iv.qIndex] || AI_INTERVIEW_QUESTION_BANK['Mechanical Design / CAD / GD&T (Creo / NX)'][0];
+    const activeQ = trackQuestions[iv.qIndex] || AI_INTERVIEW_QUESTION_BANK['Technical Test Review: AGV, Pneumatics, Bearings, 5S & Core Mechanical'][0];
 
     // =========================================================================
-    // FULL-SCREEN VERSION 5 HUMAN-MOTION AI INTERVIEW & PROCTORED ROOM
-    // (Self-generating like Mock Test + Selectable Audio + Face Motion Avatar + Webcam Proctor)
+    // FULL-SCREEN VERSION 5 HUMAN-LIKE GEMINI INTERVIEW ROOM (TECHNICAL / HR / GD)
     // =========================================================================
     if (iv.activeFullscreen) {
       syncExamFullscreenMode(true);
@@ -6425,32 +7035,68 @@ function formatReadableSyllabus(rawText) {
         : 0;
       const mins = String(Math.floor((iv.qTimerSec || 180) / 60)).padStart(2, '0');
       const secs = String((iv.qTimerSec || 180) % 60).padStart(2, '0');
+      const spentSec = iv.sessionTimings[iv.qIndex] || 0;
 
-      // Check if user finished all questions in the self-generated interview mock set
+      // Final Session Performance & Timing Report View
       if (iv.sessionFinished) {
-        const verdict = avgSessionScore >= 75
-          ? 'SELECTED — Tier-1 Core Mechanical Offer Ready'
-          : avgSessionScore >= 50
-            ? 'SHORTLISTED — Revise Recommended Study Guides for Final Round'
-            : 'NEEDS REVISION — Practice Governing Derivations & Re-Attempt';
+        const totalIntSec = Math.max(1, iv.totalInterviewSec || 1);
+        const avgIntSec = (totalIntSec / Math.max(1, trackQuestions.length)).toFixed(1);
+        const verdict = iv.terminatedByProctor
+          ? '⛔ SESSION TERMINATED BY PROCTORING GUARD (3/3 WARNINGS EXCEEDED)'
+          : avgSessionScore >= 75
+            ? 'SELECTED — Strong Technical & Communication Readiness'
+            : avgSessionScore >= 50
+              ? 'SHORTLISTED — Revise Formula Units & 5S/Numeric Steps'
+              : 'NEEDS PRACTICE — Review Model Answers & Study Guides Below';
 
         container.innerHTML = `
           <div class="max-w-5xl mx-auto py-4 space-y-5">
-            <div class="bg-slate-900 text-white rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-2 border-emerald-500 shadow-2xl">
-              <div class="space-y-1">
-                <span class="text-xs font-extrabold uppercase tracking-wider text-amber-400">
-                  🏢 Version 5 Self-Generated AI Interview Session Complete
-                </span>
-                <h1 class="text-2xl font-extrabold">Overall Interview Score: ${avgSessionScore}% (${answeredIndices.length}/${trackQuestions.length} Answered)</h1>
-                <p class="text-xs text-emerald-300 font-bold">Panel Verdict: ${escapeHtml(verdict)} · Proctoring Warnings: ${state.proctorState.warningCount}</p>
+            ${iv.terminatedByProctor ? `
+              <div class="rounded-2xl bg-rose-950 border-2 border-rose-500 text-white p-5 shadow-xl flex items-center gap-4">
+                <div class="text-3xl">⛔</div>
+                <div>
+                  <div class="text-xs font-black uppercase tracking-wider text-rose-400">3-Warning Limit Reached · Interview Auto-Terminated</div>
+                  <div class="text-base font-extrabold mt-0.5">Your session was ended automatically after reaching 3/3 proctoring warnings (${escapeHtml(state.proctorState.lastAlert)}).</div>
+                </div>
               </div>
-              <div class="flex flex-wrap gap-2.5">
-                <button type="button" id="iv-regenerate-new-set-btn" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow">
-                  🎲 Self-Generate New Interview Set →
-                </button>
-                <button type="button" id="iv-exit-fs-btn" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow">
-                  ✕ Exit Full-Screen Interview
-                </button>
+            ` : ''}
+
+            <div class="bg-slate-900 text-white rounded-2xl p-6 space-y-4 border-2 border-emerald-500 shadow-2xl">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div class="space-y-1">
+                  <span class="text-xs font-extrabold uppercase tracking-wider text-amber-400">
+                    🏢 Version 5 Gemini Interview Performance &amp; Timing Report
+                  </span>
+                  <h1 class="text-2xl font-extrabold">Overall Score: ${avgSessionScore}% (${answeredIndices.length}/${trackQuestions.length} Answered)</h1>
+                  <p class="text-xs text-emerald-300 font-bold">${escapeHtml(verdict)}</p>
+                </div>
+                <div class="flex flex-wrap gap-2.5">
+                  <button type="button" id="iv-regenerate-new-set-btn" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow">
+                    🎲 Self-Generate New Set →
+                  </button>
+                  <button type="button" id="iv-exit-fs-btn" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow">
+                    ✕ Return to Placement Hub
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="p-3 rounded-xl bg-slate-800 border border-slate-700">
+                  <div class="text-[10px] font-bold uppercase text-slate-400">Total Interview Time</div>
+                  <div class="text-base font-extrabold text-white mt-0.5">${Math.floor(totalIntSec / 60)}m ${totalIntSec % 60}s</div>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-800 border border-slate-700">
+                  <div class="text-[10px] font-bold uppercase text-slate-400">Avg Response Time</div>
+                  <div class="text-base font-extrabold text-blue-300 mt-0.5">${avgIntSec}s / Q</div>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-800 border border-slate-700">
+                  <div class="text-[10px] font-bold uppercase text-slate-400">Interview Round</div>
+                  <div class="text-base font-extrabold text-emerald-400 mt-0.5 uppercase">${escapeHtml(iv.roundMode)}</div>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-800 border border-slate-700">
+                  <div class="text-[10px] font-bold uppercase text-slate-400">Proctoring Warnings</div>
+                  <div class="text-base font-extrabold ${state.proctorState.warningCount >= 3 ? 'text-rose-400' : 'text-amber-300'} mt-0.5">${state.proctorState.warningCount} / 3</div>
+                </div>
               </div>
             </div>
 
@@ -6458,16 +7104,20 @@ function formatReadableSyllabus(rawText) {
               ${trackQuestions.map((qIt, idx) => {
                 const sc = iv.sessionScores[idx] ?? 0;
                 const uAns = iv.sessionAnswers[idx] || '— (Not Answered)';
+                const qSec = iv.sessionTimings[idx] || 0;
                 return `
                   <article class="bg-white rounded-2xl border border-slate-200 p-5 shadow-md space-y-3">
-                    <div class="flex items-center justify-between">
-                      <span class="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold text-xs">Interview Q${idx + 1} · ${escapeHtml(qIt.studyTopic)}</span>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div class="flex items-center gap-2">
+                        <span class="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold text-xs">Q${idx + 1} · ${escapeHtml(qIt.studyTopic)}</span>
+                        <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono font-bold text-xs">⏱ Time: ${qSec}s</span>
+                      </div>
                       <span class="px-3 py-1 rounded-full font-extrabold text-xs ${sc >= 70 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">Score: ${sc}/100</span>
                     </div>
                     <p class="text-sm font-bold text-slate-900">${escapeHtml(qIt.q)}</p>
-                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700"><b>Your Combined Voice/Text Answer:</b> ${escapeHtml(uAns)}</div>
+                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700"><b>Your Spoken/Written Response:</b> ${escapeHtml(uAns)}</div>
                     <div class="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs text-slate-800 space-y-1">
-                      <b>Model Panel Answer Points:</b>
+                      <b>Model Panel Answer &amp; Formula Points:</b>
                       <ul class="list-disc pl-4">${(qIt.idealPoints || []).map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
                     </div>
                   </article>
@@ -6486,48 +7136,52 @@ function formatReadableSyllabus(rawText) {
 
       container.innerHTML = `
         <div class="max-w-6xl mx-auto py-1 space-y-4">
+          ${renderExitConfirmationModalHtml(iv.showExitConfirmModal, 'AI Interview')}
           ${renderProctorWarningBannerHtml()}
 
-          <!-- Top Full-Screen Header Bar (All Other Sections Hidden) -->
+          <!-- Top Full-Screen Header Bar -->
           <div class="bg-slate-900 text-white rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl border border-blue-700/70">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-lg font-black shadow">🎙️</div>
-              <div>
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-lg font-black shadow shrink-0">✦</div>
+              <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
-                    ⛶ Version 5 Self-Generating Human-Motion AI Interview · Question ${iv.qIndex + 1} of ${trackQuestions.length}
+                    ⛶ Gemini Live ${iv.roundMode === 'hr' ? 'HR Interview' : iv.roundMode === 'gd' ? 'Group Discussion (GD)' : 'Technical Interview'} · Q${iv.qIndex + 1}/${trackQuestions.length}
                   </span>
                   <span class="px-2.5 py-0.5 rounded-full bg-blue-950 text-blue-200 border border-blue-700 font-bold text-[11px]">
-                    Session Avg: ${avgSessionScore}%
+                    Avg Score: ${avgSessionScore}%
                   </span>
                 </div>
-                <h1 class="text-sm sm:text-base font-extrabold text-white mt-0.5">${escapeHtml(iv.company)}</h1>
+                <h1 class="text-sm sm:text-base font-extrabold text-white truncate mt-0.5">${escapeHtml(iv.company)}</h1>
               </div>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
+              <span id="iv-q-spent-readout" class="px-2.5 py-1.5 rounded-xl bg-indigo-950 border border-indigo-700 font-mono text-xs font-bold text-indigo-200">
+                ⏳ Answered in: ${spentSec}s
+              </span>
               <div id="iv-q-timer-readout" class="px-3 py-1.5 rounded-xl bg-blue-950 border border-blue-700 font-mono text-xs sm:text-sm font-extrabold text-amber-300">
                 ⏱ ${mins}:${secs}
               </div>
               <button type="button" id="iv-self-gen-btn" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shadow transition">
-                🎲 Self-Generate New Set
+                🎲 New Set
               </button>
               <button type="button" id="iv-finish-session-btn" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow transition">
-                ✓ Finish &amp; Scorecard
+                📊 Finish &amp; Report
               </button>
-              <button type="button" id="iv-exit-fs-btn" class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow transition">
+              <button type="button" id="iv-request-exit-btn" class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow transition">
                 ✕ Exit
               </button>
             </div>
           </div>
 
-          <!-- Top Visual Row: Left = Human-Motion AI Panelist Avatar + Selectable Audio | Right = Live Candidate Face & Motion Detector Camera -->
+          <!-- Top Visual Row: Left = Human-Like Gemini Avatar + Selectable Audio | Right = Live Candidate Camera (ON/OFF Toggle) -->
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
             <div class="lg:col-span-2">
               ${renderHumanInterviewerAvatarSvg(iv)}
             </div>
             <div class="flex flex-col justify-between bg-slate-900 rounded-2xl border border-slate-700 p-3 space-y-2">
-              ${renderProctorCameraWidgetHtml(false)}
+              ${renderProctorCameraWidgetHtml(false, 'iv-live-cam-toggle')}
               <div class="flex flex-wrap items-center justify-between gap-2 px-1 pt-1 border-t border-slate-800 text-[11px] text-slate-300">
                 <label class="inline-flex items-center gap-1.5 cursor-pointer font-bold">
                   <input id="iv-autospeak-toggle" type="checkbox" ${iv.autoSpeak ? 'checked' : ''} class="rounded text-blue-500">
@@ -6535,7 +7189,7 @@ function formatReadableSyllabus(rawText) {
                 </label>
                 <label class="inline-flex items-center gap-1.5 cursor-pointer font-bold text-amber-300">
                   <input id="iv-autolisten-toggle" type="checkbox" ${iv.autoListenAfterSpeak ? 'checked' : ''} class="rounded text-amber-400">
-                  <span>🎤 Auto-Mic After AI Speaks</span>
+                  <span>🎤 Auto-Mic (Gemini Live)</span>
                 </label>
               </div>
             </div>
@@ -6543,42 +7197,37 @@ function formatReadableSyllabus(rawText) {
 
           <!-- Unified Combined Voice + Text Interview Question & Answer Console -->
           <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-6 shadow-2xl space-y-4">
-            <!-- Track, Set Size & Question Navigation -->
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 pb-3 border-b border-slate-200">
-              <div class="sm:col-span-2">
-                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1" for="iv-track-select">Interview Domain Track (Self-Generating)</label>
-                <select id="iv-track-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white text-slate-900">
-                  <option value="Self-Generated Mixed Core + Aptitude (Like Mock Test)" ${iv.track === 'Self-Generated Mixed Core + Aptitude (Like Mock Test)' ? 'selected' : ''}>⚡ Self-Generated Mixed Core + Aptitude (Like Mock Test)</option>
-                  ${Object.keys(AI_INTERVIEW_QUESTION_BANK).map(t => `
-                    <option value="${escapeHtml(t)}" ${iv.track === t ? 'selected' : ''}>${escapeHtml(t)}</option>
-                  `).join('')}
-                </select>
+            <!-- Round Mode Pills (Technical / HR / GD) + Track Switcher -->
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
+              <div class="flex flex-wrap gap-1.5">
+                ${[
+                  ['technical', '⚙️ Technical Round'],
+                  ['hr', '🤝 Separate HR Round (40 Qs)'],
+                  ['gd', '🗣️ Group Discussion (GD) Round']
+                ].map(([mKey, mLbl]) => `
+                  <button type="button" data-iv-round-mode="${mKey}" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${iv.roundMode === mKey ? 'bg-blue-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                    ${mLbl}
+                  </button>
+                `).join('')}
               </div>
-              <div>
-                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1" for="iv-set-count-select">Questions in Set</label>
-                <select id="iv-set-count-select" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white text-slate-900">
-                  <option value="5" ${iv.sessionQuestionCount === 5 ? 'selected' : ''}>5 Questions Mock Interview</option>
-                  <option value="10" ${iv.sessionQuestionCount === 10 ? 'selected' : ''}>10 Questions Full Interview</option>
-                  <option value="15" ${iv.sessionQuestionCount === 15 ? 'selected' : ''}>15 Questions Stress Interview</option>
-                </select>
-              </div>
-              <div class="flex items-end gap-2">
-                <button type="button" id="iv-prev-q-btn" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-800">
+
+              <div class="flex items-center gap-2">
+                <button type="button" id="iv-prev-q-btn" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-800">
                   ← Prev
                 </button>
-                <button type="button" id="iv-next-q-btn" class="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold">
+                <button type="button" id="iv-next-q-btn" class="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold">
                   Next (${iv.qIndex + 1}/${trackQuestions.length}) →
                 </button>
               </div>
             </div>
 
-            <!-- Active Interviewer Question Box with Selectable Audio Playback -->
+            <!-- Active Interviewer Question Box -->
             <div class="p-4 sm:p-5 rounded-2xl bg-slate-900 text-white space-y-2.5 shadow-md">
               <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-blue-300">
-                <span class="font-extrabold">🎙️ QUESTION ${iv.qIndex + 1} OF ${trackQuestions.length} · ${escapeHtml(activeQ.studyTopic)}</span>
+                <span class="font-extrabold">🎙️ GEMINI INTERVIEWER · QUESTION ${iv.qIndex + 1} OF ${trackQuestions.length} (${escapeHtml(activeQ.studyTopic)})</span>
                 <div class="flex flex-wrap items-center gap-2">
                   <button type="button" id="iv-speak-q-btn" class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">
-                    🔊 Speak Question (Lip-Sync)
+                    🔊 Speak Question
                   </button>
                   <button type="button" id="iv-stop-speech-btn" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold">
                     🔇 Mute
@@ -6594,25 +7243,25 @@ function formatReadableSyllabus(rawText) {
             <div class="space-y-3">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <label class="text-xs sm:text-sm font-extrabold text-slate-900" for="iv-answer-input">
-                  Combined Voice + Text Response (Speak into 🎤 Mic and/or Type below):
+                  Talk to Gemini Assistant (Click 🎤 Mic Dictation or Type Below):
                 </label>
                 <div class="flex flex-wrap items-center gap-2">
                   <button type="button" id="iv-mic-record-btn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition flex items-center gap-1.5">
-                    🎤 Mic Dictation + Text
+                    🎤 Speak to Gemini (Mic + Text)
                   </button>
                   <button type="button" id="iv-fill-sample-btn" class="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-bold hover:bg-blue-100">
-                    ✦ Insert Key Formula Points
+                    ✦ Insert Model Answer Points
                   </button>
                 </div>
               </div>
 
-              <textarea id="iv-answer-input" rows="4" class="w-full p-4 rounded-xl border-2 border-slate-300 text-xs sm:text-sm text-slate-900 leading-relaxed focus:border-blue-600 focus:outline-none" placeholder="Speak into your microphone (words stream here live) or type your governing formula and explanation here...">${escapeHtml(iv.answerText)}</textarea>
+              <textarea id="iv-answer-input" rows="4" class="w-full p-4 rounded-xl border-2 border-slate-300 text-xs sm:text-sm text-slate-900 leading-relaxed focus:border-blue-600 focus:outline-none" placeholder="Speak naturally to the Gemini Interviewer (your speech appears here live) or type your formula and explanation...">${escapeHtml(iv.answerText)}</textarea>
 
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <button type="button" id="iv-evaluate-btn" class="w-full sm:w-auto px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs sm:text-sm shadow-lg transition">
-                  🤖 Submit &amp; Evaluate Answer (Voice Feedback + Study Guide Suggester) →
+                  ✦ Send to Gemini Interviewer (Voice Reply + Score + Study Guide) →
                 </button>
-                <span class="text-[11px] text-slate-500">Logs score for Q${iv.qIndex + 1}, speaks feedback aloud with lip-sync &amp; recommends Study Guides.</span>
+                <span class="text-[11px] text-slate-500">Gemini replies aloud with conversational feedback, logs your answering speed (${spentSec}s), and suggests Study Guides.</span>
               </div>
             </div>
 
@@ -6625,7 +7274,49 @@ function formatReadableSyllabus(rawText) {
       `;
 
       bindProctorBannerEvents();
-      document.getElementById('iv-exit-fs-btn')?.addEventListener('click', exitInterviewFullscreen);
+
+      document.getElementById('iv-live-cam-toggle')?.addEventListener('click', () => {
+        iv.proctoringEnabled = !iv.proctoringEnabled;
+        if (iv.proctoringEnabled) {
+          startProctorCameraAndDetector();
+          showToast('📷 AI Camera & Cheating Detector enabled (3-Warning Limit active).', 'success');
+        } else {
+          stopProctorCameraAndDetector();
+          showToast('📷 Camera turned OFF by user.', 'info');
+        }
+        renderPlacementPrep();
+      });
+
+      // Exit Button Warning Confirmation Modal
+      document.getElementById('iv-request-exit-btn')?.addEventListener('click', () => {
+        iv.showExitConfirmModal = true;
+        triggerProctorViolation('Clicked Exit Button During Active AI Interview', true);
+        if (iv.activeFullscreen && !iv.sessionFinished) renderPlacementPrep();
+      });
+      document.getElementById('exit-modal-cancel-btn')?.addEventListener('click', () => {
+        iv.showExitConfirmModal = false;
+        try {
+          if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          }
+        } catch {}
+        renderPlacementPrep();
+      });
+      document.getElementById('exit-modal-confirm-btn')?.addEventListener('click', () => {
+        iv.showExitConfirmModal = false;
+        exitInterviewFullscreen();
+      });
+
+      container.querySelectorAll('[data-iv-round-mode]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          iv.roundMode = btn.dataset.ivRoundMode;
+          generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+          renderPlacementPrep();
+          const qs = getActiveInterviewQuestions();
+          if (iv.autoSpeak && qs[0]) speakInterviewText(qs[0].q);
+        });
+      });
+
       document.getElementById('iv-self-gen-btn')?.addEventListener('click', () => {
         generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
         enterInterviewFullscreen(false);
@@ -6668,55 +7359,81 @@ function formatReadableSyllabus(rawText) {
 
     container.innerHTML = `
       <div class="space-y-7">
-        <!-- 1. TOP CARD: VERSION 5 ACTUAL JOB PROCESS PIPELINE & HUMAN-MOTION SELF-GENERATING AI INTERVIEW LAUNCHER -->
+        <!-- 1. TOP CARD: VERSION 5 GEMINI LIVE INTERVIEW, SEPARATE HR ROUND, GD SIMULATOR & PROCTORED MOCK LAUNCHER -->
         <section class="bg-white rounded-2xl border-2 border-blue-600 p-5 sm:p-6 shadow-md space-y-5">
-          <!-- Version 5 Actual Job Process 3-Stage Pipeline Bar -->
-          <div class="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
+          <div class="p-4 sm:p-5 rounded-2xl bg-slate-900 text-white space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
-                🏢 Version 5 Actual Campus Job Recruitment Process Simulator (Proctored)
-              </span>
-              <span class="text-[11px] text-emerald-300 font-bold">📷 Webcam Face Detector + Motion Sensor + Exit Warning Active</span>
+              <div>
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+                  ✦ Version 5 Gemini Live Interviewer · Technical + Separate HR + Group Discussion (GD) + Mock Test
+                </span>
+                <h1 class="text-lg sm:text-2xl font-extrabold text-white mt-0.5">
+                  Complete Campus Placement Process (Selectable Camera ON/OFF · 3-Warning Auto-End)
+                </h1>
+              </div>
+              <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-600 text-xs font-extrabold text-emerald-300 cursor-pointer">
+                <input id="hub-camera-toggle" type="checkbox" ${iv.proctoringEnabled ? 'checked' : ''} class="rounded text-blue-500">
+                <span>📷 Camera Proctor: ${iv.proctoringEnabled ? 'ON (3-Warn Limit)' : 'OFF'}</span>
+              </label>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+
+            <!-- 4-Stage Campus Recruitment Cards (Mock Test, Technical Interview, Separate HR Round, Group Discussion GD) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700 flex flex-col justify-between gap-2">
                 <div>
-                  <span class="text-[10px] font-extrabold uppercase text-blue-400">Round 1 · Online Screening</span>
-                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Proctored Aptitude + Core Technical Test</h3>
-                  <p class="text-[11px] text-slate-300 mt-0.5">Timed MCQ exam with Webcam Face Detection, Motion Monitoring &amp; Exit Warnings.</p>
+                  <span class="text-[10px] font-extrabold uppercase text-blue-400">Round 1 · Written Test</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Proctored Mock Test + Timing Report</h3>
+                  <p class="text-[11px] text-slate-300 mt-0.5">Includes your Technical Test Review (AGV, Pneumatics, Bearings, 5S) with per-question timer.</p>
                 </div>
                 <button type="button" id="job-stage1-btn" class="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs">
-                  1️⃣ Start Round 1 Proctored Mock Test →
+                  1️⃣ Start Proctored Mock Test →
                 </button>
               </div>
+
               <div class="p-3.5 rounded-xl bg-blue-950/90 border-2 border-amber-400 flex flex-col justify-between gap-2">
                 <div>
-                  <span class="text-[10px] font-extrabold uppercase text-amber-300">Round 2 · Human-Avatar Technical Viva</span>
-                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Self-Generating Voice + Text AI Interview</h3>
-                  <p class="text-[11px] text-slate-200 mt-0.5">Animated Human Interviewer (lip-sync + eye blink), selectable audio voice &amp; webcam proctoring.</p>
+                  <span class="text-[10px] font-extrabold uppercase text-amber-300">Round 2 · Technical Viva</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Gemini Live Technical Interview</h3>
+                  <p class="text-[11px] text-slate-200 mt-0.5">30+ Fresher Mechanical Qs + AGV/Pneumatic Numericals with Human Face Motion &amp; Voice.</p>
                 </div>
-                <button type="button" id="iv-launch-fs-top-btn" class="w-full py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow">
-                  2️⃣ Start Round 2 Human-Motion AI Interview →
+                <button type="button" id="launch-tech-iv-btn" class="w-full py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow">
+                  2️⃣ Start Technical Interview →
                 </button>
               </div>
-              <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700 flex flex-col justify-between gap-2">
+
+              <div class="p-3.5 rounded-xl bg-indigo-950/90 border border-indigo-500 flex flex-col justify-between gap-2">
                 <div>
-                  <span class="text-[10px] font-extrabold uppercase text-emerald-400">Round 3 · Study Guide &amp; 3D Animation Prep</span>
-                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Things Workshop 3D &amp; Formula Revision</h3>
-                  <p class="text-[11px] text-slate-300 mt-0.5">Revise weak interview topics with interactive 3D animations and synchronized plots.</p>
+                  <span class="text-[10px] font-extrabold uppercase text-indigo-300">Round 3 · Separate HR Round</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">40 Most Asked HR Questions Viva</h3>
+                  <p class="text-[11px] text-slate-200 mt-0.5">Practice Tell Me About Yourself, Strengths, 5-Yr Plan, Conflict &amp; Salary with Gemini Voice.</p>
                 </div>
-                <button type="button" id="job-stage3-btn" class="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs">
-                  3️⃣ Open 3D Animated Study Guides →
+                <button type="button" id="launch-hr-iv-btn" class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow">
+                  3️⃣ Start Separate HR Interview →
+                </button>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-emerald-950/90 border border-emerald-500 flex flex-col justify-between gap-2">
+                <div>
+                  <span class="text-[10px] font-extrabold uppercase text-emerald-300">Round 4 · Group Discussion</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Campus GD Simulator &amp; Pitch</h3>
+                  <p class="text-[11px] text-slate-200 mt-0.5">Practice EV vs Hydrogen, AI in Manufacturing &amp; Industry 4.0 GD topics with live scoring.</p>
+                </div>
+                <button type="button" id="launch-gd-iv-btn" class="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow">
+                  4️⃣ Start GD Simulator →
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- Pre-Launch Configuration for Self-Generating Human-Motion AI Interview -->
+          <!-- Pre-Launch Track, Company & Voice Persona Selector -->
           <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
             <div>
-              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-track-select">Self-Generating Interview Track</label>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-track-select">Interview Question Bank Track</label>
               <select id="iv-hub-track-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                <option value="Technical Test Review: AGV, Pneumatics, Bearings, 5S & Core Mechanical" ${iv.track === 'Technical Test Review: AGV, Pneumatics, Bearings, 5S & Core Mechanical' ? 'selected' : ''}>⭐ Technical Test Review (AGV, Pneumatics, Bearings, 5S)</option>
+                <option value="30+ Must-Know Mechanical Fresher Questions (GaugeHow & Playlist)" ${iv.track === '30+ Must-Know Mechanical Fresher Questions (GaugeHow & Playlist)' ? 'selected' : ''}>🔥 30+ Must-Know Mechanical Fresher Qs (GaugeHow)</option>
+                <option value="Separate HR & Behavioral Interview Round (40 Questions · upGrad & Playlist)" ${iv.track === 'Separate HR & Behavioral Interview Round (40 Questions · upGrad & Playlist)' ? 'selected' : ''}>🤝 Separate HR Interview Round (40 Questions)</option>
+                <option value="Group Discussion (GD) Round Simulator & Campus GD Topics" ${iv.track === 'Group Discussion (GD) Round Simulator & Campus GD Topics' ? 'selected' : ''}>🗣️ Group Discussion (GD) Simulator</option>
                 <option value="Self-Generated Mixed Core + Aptitude (Like Mock Test)" ${iv.track === 'Self-Generated Mixed Core + Aptitude (Like Mock Test)' ? 'selected' : ''}>⚡ Self-Generated Mixed Core + Aptitude (Like Mock Test)</option>
                 ${Object.keys(AI_INTERVIEW_QUESTION_BANK).map(t => `
                   <option value="${escapeHtml(t)}" ${iv.track === t ? 'selected' : ''}>${escapeHtml(t)}</option>
@@ -6738,22 +7455,84 @@ function formatReadableSyllabus(rawText) {
               </select>
             </div>
             <div>
-              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-persona-select">Selectable Interviewer Audio &amp; Face</label>
+              <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1" for="iv-hub-persona-select">Interviewer Voice &amp; Persona</label>
               <select id="iv-hub-persona-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold bg-white">
+                <option value="gemini-live" ${iv.voicePersona === 'gemini-live' ? 'selected' : ''}>✨ Gemini Live Assistant (Conversational)</option>
                 <option value="male-panel" ${iv.voicePersona === 'male-panel' ? 'selected' : ''}>🎙️ Male Chief Panelist (Dr. Rajeev)</option>
-                <option value="female-panel" ${iv.voicePersona === 'female-panel' ? 'selected' : ''}>🎙️ Female R&amp;D Panelist (Dr. Ananya)</option>
+                <option value="female-panel" ${iv.voicePersona === 'female-panel' ? 'selected' : ''}>🎙️ Female HR &amp; R&amp;D Panelist (Dr. Ananya)</option>
                 <option value="fast-tech" ${iv.voicePersona === 'fast-tech' ? 'selected' : ''}>🎙️ Fast Technical Examiner (Prof. Vikram)</option>
               </select>
             </div>
-            <div class="flex items-end gap-2">
+            <div class="flex items-end">
               <button type="button" id="iv-launch-fs-mic-btn" class="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow transition">
-                🎤 Launch Full-Screen (Mic + Face Proctor ON)
+                🎤 Start Gemini Live Interview (Mic ON)
               </button>
             </div>
           </div>
         </section>
 
-        <!-- 2. FIRST PORTAL: FEATURED OFFICIAL SJCE COLLEGE PLACEMENT PORTAL (https://sjceplacements.org/) -->
+        <!-- 2. TECHNICAL TEST REVIEW & FORMULA SCORECARD (YOUR 10 ANSWERED + 8 NUMERICAL QUESTIONS) -->
+        <section class="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div>
+              <span class="text-xs font-extrabold uppercase tracking-wider text-blue-600">📊 Your Technical Assessment Review &amp; Verified Formula Sheet</span>
+              <h2 class="text-lg sm:text-xl font-extrabold text-slate-900">Answered Conceptual (75%) + Unanswered Numerical Solutions (AGV, Pneumatics, Bearings &amp; 5S)</h2>
+            </div>
+            <button type="button" id="practice-tech-review-mock-btn" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow shrink-0">
+              ⏱ Practice These 18 Questions in Timed Mock Test →
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1">
+              <div class="font-extrabold text-emerald-950">✅ Cylinder Bore Force (D=63mm, P=6 bar)</div>
+              <div class="font-mono text-[11px] text-emerald-800">P = 0.6 N/mm² · A = π(63)²/4 = 3117.25 mm²</div>
+              <div class="font-bold text-slate-900">F = P × A = 1,870.35 N → <span class="text-emerald-700">1,870 N ✅</span></div>
+            </div>
+            <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1">
+              <div class="font-extrabold text-emerald-950">✅ AGV 2WD Torque (800kg, Crr=0.02, 3% grad)</div>
+              <div class="font-mono text-[11px] text-emerald-800">F = 156.96 + 235.44 = 392.4 N · T_tot = 69.25 N·m</div>
+              <div class="font-bold text-slate-900">2WD: T_wheel = 69.25 / 2 → <span class="text-emerald-700">35 N·m ✅</span></div>
+            </div>
+            <div class="p-3.5 rounded-xl bg-blue-50 border border-blue-200 space-y-1">
+              <div class="font-extrabold text-blue-950">✅ AGV Beam Bending &amp; Bearing Life</div>
+              <div class="font-mono text-[11px] text-blue-800">100kg on 50×50mm, L=1m → σ = M/Z = 11.77 ≈ 12 MPa</div>
+              <div class="font-bold text-slate-900">Roller Bearing (3000 rpm): <span class="text-blue-700">125 hours ✅</span></div>
+            </div>
+            <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-1">
+              <div class="font-extrabold text-amber-950">✅ Air Consumption &amp; Complete 5S</div>
+              <div class="font-mono text-[11px] text-amber-900">D=50mm, L=200mm, 10 cpm → 7.85 L/min (≈ 10 L/min)</div>
+              <div class="font-bold text-slate-900">5S: Sort · Set in Order · <span class="underline text-rose-700">Shine</span> · Standardize · Sustain</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. CURATED YOUTUBE INTERVIEW, HR, APTITUDE PLAYLISTS & GOOGLE DRIVE VOICE FOLDER -->
+        <section class="bg-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-xl border border-slate-800 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">🎬 Integrated Video Masterclasses, Playlists &amp; SJCE Voice Drive</span>
+              <h2 class="text-base sm:text-lg font-extrabold text-white mt-0.5">Technical Interview, Separate HR Round, Aptitude Playlists &amp; Drive Recordings</h2>
+            </div>
+            <a href="https://drive.google.com/drive/folders/1SM7dWs5dUmj_sY3BiK_5MsPlQL5njm2b?usp=drive_link" target="_blank" rel="noopener noreferrer" class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shrink-0">
+              📂 Open SJCE Voice &amp; PDF Drive ↗
+            </a>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            ${CURATED_INTERVIEW_VIDEOS_AND_PLAYLISTS.map(v => `
+              <a href="${escapeHtml(v.url)}" target="_blank" rel="noopener noreferrer" class="p-4 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700 hover:border-blue-400 transition flex flex-col justify-between gap-2">
+                <div>
+                  <span class="inline-block text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-700 mb-1">${escapeHtml(v.badge)}</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white leading-snug">${escapeHtml(v.title)}</h3>
+                  <p class="text-[11px] text-slate-300 mt-1 leading-relaxed">${escapeHtml(v.desc)}</p>
+                </div>
+                <span class="text-[11px] font-bold text-amber-400 pt-1">Open Resource ↗</span>
+              </a>
+            `).join('')}
+          </div>
+        </section>
+
+        <!-- 4. FIRST PORTAL: FEATURED OFFICIAL SJCE COLLEGE PLACEMENT PORTAL (https://sjceplacements.org/) -->
         <div class="rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white p-6 sm:p-7 shadow-xl border-2 border-amber-400/80">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div class="flex items-start gap-4">
@@ -6791,17 +7570,17 @@ function formatReadableSyllabus(rawText) {
           </div>
         </div>
 
-        <!-- 3. QUICK LAUNCH APP ICON DOCK (ORDERED: 1. SJCE COLLEGE -> 2. PROSPLE, NATS & GENERAL PORTALS -> 3. APTITUDE APPS) -->
+        <!-- 5. QUICK LAUNCH APP ICON DOCK (ORDERED: 1. SJCE COLLEGE -> 2. PROSPLE, NATS & GENERAL PORTALS -> 3. APTITUDE & MOCK INTERVIEW APPS: PRAMP, INTERVIEWING.IO, PREPBUNK, INTERVIEWBIT) -->
         <div class="bg-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-lg border border-slate-800 space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <span class="text-[11px] font-extrabold uppercase tracking-wider text-blue-400">Quick-Launch Placement App Dock (1st: SJCE College · 2nd: Prosple, NATS &amp; General Portals · 3rd: IndiaBIX, PrepInsta, Practica &amp; More)</span>
-              <h3 class="text-base sm:text-lg font-extrabold text-white mt-0.5">1-Click Placement, Global Job &amp; Aptitude Portals</h3>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-blue-400">Quick-Launch Placement &amp; Mock Interview Dock (SJCE · Prosple · NATS · Naukri · Unstop · Pramp · Interviewing.io · Prepbunk · InterviewBit)</span>
+              <h3 class="text-base sm:text-lg font-extrabold text-white mt-0.5">1-Click Placement, Mock Interview &amp; Aptitude Portals</h3>
             </div>
             <span class="text-xs text-slate-400">Click any icon to launch the official portal directly ↗</span>
           </div>
           <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 gap-3 text-center">
-            ${OFFICIAL_JOB_PORTALS.slice(0, 27).map(p => `
+            ${OFFICIAL_JOB_PORTALS.slice(0, 31).map(p => `
               <a href="${escapeHtml(p.url)}" target="_blank" rel="noopener noreferrer" class="group p-2.5 rounded-2xl bg-slate-800/90 hover:bg-blue-950 border border-slate-700 hover:border-blue-500 transition flex flex-col items-center gap-2">
                 ${p.logoSvg}
                 <span class="text-[11px] font-bold text-slate-200 group-hover:text-white leading-tight line-clamp-2">${escapeHtml(p.name.split(' (')[0])}</span>
@@ -6810,15 +7589,15 @@ function formatReadableSyllabus(rawText) {
           </div>
         </div>
 
-        <!-- 4. COMPLETE DIRECTORY OF ALL JOB PORTALS -->
+        <!-- 6. COMPLETE DIRECTORY OF ALL JOB, APTITUDE & MOCK INTERVIEW PORTALS -->
         <section class="space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Ordered Hierarchy: 1st SJCE College · 2nd Prosple, NATS &amp; General Portals · 3rd Aptitude Portals · 4th Core OEMs</span>
-              <h2 class="text-xl font-extrabold text-slate-900">All Placement, Internship, Diversity &amp; Aptitude Portals (${OFFICIAL_JOB_PORTALS.length})</h2>
+              <span class="text-xs font-bold uppercase tracking-wider text-blue-600">Ordered Hierarchy: 1st SJCE College · 2nd Prosple, NATS &amp; General Portals · 3rd Aptitude &amp; Mock Interview Portals · 4th Core OEMs</span>
+              <h2 class="text-xl font-extrabold text-slate-900">All Placement, Mock Interview &amp; Core Engineering Portals (${OFFICIAL_JOB_PORTALS.length})</h2>
             </div>
             <div class="w-full sm:w-64">
-              <input id="portal-search-input" type="search" value="${escapeHtml(pf.search)}" placeholder="Search Prosple, NATS, Glassdoor, Seek, Xing..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white">
+              <input id="portal-search-input" type="search" value="${escapeHtml(pf.search)}" placeholder="Search Pramp, InterviewBit, Prosple, NATS..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white">
             </div>
           </div>
 
@@ -6857,7 +7636,7 @@ function formatReadableSyllabus(rawText) {
                     Open Official Portal ↗
                   </a>
                   <button type="button" data-prep-company="${escapeHtml(portal.name)}" class="py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-xs transition">
-                    🎙️ AI Interview
+                    🎙️ Gemini Interview
                   </button>
                 </div>
               </div>
@@ -6867,14 +7646,33 @@ function formatReadableSyllabus(rawText) {
       </div>
     `;
 
+    document.getElementById('hub-camera-toggle')?.addEventListener('change', (e) => {
+      iv.proctoringEnabled = Boolean(e.target.checked);
+      state.mockExam.proctoringEnabled = iv.proctoringEnabled;
+      renderPlacementPrep();
+    });
+
     document.getElementById('job-stage1-btn')?.addEventListener('click', () => {
       switchModule('mock-tests');
     });
-    document.getElementById('job-stage3-btn')?.addEventListener('click', () => {
-      switchModule('study-guides');
+    document.getElementById('practice-tech-review-mock-btn')?.addEventListener('click', () => {
+      switchModule('mock-tests');
     });
-    document.getElementById('iv-launch-fs-top-btn')?.addEventListener('click', () => {
+    document.getElementById('launch-tech-iv-btn')?.addEventListener('click', () => {
+      iv.roundMode = 'technical';
       generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+      enterInterviewFullscreen(false);
+    });
+    document.getElementById('launch-hr-iv-btn')?.addEventListener('click', () => {
+      iv.roundMode = 'hr';
+      iv.track = 'Separate HR & Behavioral Interview Round (40 Questions · upGrad & Playlist)';
+      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
+      enterInterviewFullscreen(false);
+    });
+    document.getElementById('launch-gd-iv-btn')?.addEventListener('click', () => {
+      iv.roundMode = 'gd';
+      iv.track = 'Group Discussion (GD) Round Simulator & Campus GD Topics';
+      generateSelfGeneratingInterviewSet(2);
       enterInterviewFullscreen(false);
     });
     document.getElementById('iv-launch-fs-mic-btn')?.addEventListener('click', () => {
@@ -6883,6 +7681,9 @@ function formatReadableSyllabus(rawText) {
     });
     document.getElementById('iv-hub-track-select')?.addEventListener('change', (e) => {
       iv.track = e.target.value;
+      if (iv.track.includes('HR')) iv.roundMode = 'hr';
+      else if (iv.track.includes('GD')) iv.roundMode = 'gd';
+      else iv.roundMode = 'technical';
       generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
     });
     document.getElementById('iv-hub-company-select')?.addEventListener('change', (e) => {
@@ -6921,11 +7722,11 @@ function formatReadableSyllabus(rawText) {
     document.getElementById('iv-persona-select')?.addEventListener('change', (e) => {
       iv.voicePersona = e.target.value;
       renderPlacementPrep();
-      speakInterviewText(`Voice persona switched. Ready for your response.`);
+      speakInterviewText(`Hi Girish! I'm now speaking in ${iv.voicePersona === 'gemini-live' ? 'Gemini Live conversational' : iv.voicePersona} mode.`);
     });
     document.getElementById('iv-browser-voice-select')?.addEventListener('change', (e) => {
       iv.selectedVoiceURI = e.target.value;
-      speakInterviewText(`Audio voice selected for your interview.`);
+      speakInterviewText(`Audio voice updated for your interview.`);
     });
     document.getElementById('iv-speak-q-btn')?.addEventListener('click', () => {
       speakInterviewText(`Question ${iv.qIndex + 1} for ${iv.company}. ${activeQ.q}`);
@@ -6933,18 +7734,6 @@ function formatReadableSyllabus(rawText) {
     document.getElementById('iv-stop-speech-btn')?.addEventListener('click', stopInterviewSpeech);
     document.getElementById('iv-mic-record-btn')?.addEventListener('click', toggleVoiceMicrophoneInput);
 
-    document.getElementById('iv-track-select')?.addEventListener('change', (e) => {
-      iv.track = e.target.value;
-      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount || 5);
-      renderPlacementPrep();
-      const nextList = getActiveInterviewQuestions();
-      if (iv.autoSpeak && nextList[0]) speakInterviewText(nextList[0].q);
-    });
-    document.getElementById('iv-set-count-select')?.addEventListener('change', (e) => {
-      iv.sessionQuestionCount = Number(e.target.value || 5);
-      generateSelfGeneratingInterviewSet(iv.sessionQuestionCount);
-      renderPlacementPrep();
-    });
     document.getElementById('iv-prev-q-btn')?.addEventListener('click', () => {
       iv.qIndex = (iv.qIndex - 1 + trackQuestions.length) % trackQuestions.length;
       iv.evaluated = false;
@@ -6962,7 +7751,7 @@ function formatReadableSyllabus(rawText) {
         iv.coachFeedbackHtml = '';
         iv.qTimerSec = 180;
         renderPlacementPrep();
-        if (iv.autoSpeak) speakInterviewText(trackQuestions[iv.qIndex].q);
+        if (iv.autoSpeak) speakInterviewText(`Next question. ${trackQuestions[iv.qIndex].q}`);
       } else {
         iv.sessionFinished = true;
         renderPlacementPrep();
@@ -6986,21 +7775,21 @@ function formatReadableSyllabus(rawText) {
       iv.sessionScores[iv.qIndex] = iv.lastEvaluation.score;
       iv.sessionAnswers[iv.qIndex] = iv.answerText;
       iv.evaluated = true;
-      iv.coachFeedbackHtml = '<div class="text-xs font-bold text-blue-700 animate-pulse">⚡ Generating combined AI panel feedback...</div>';
+      iv.coachFeedbackHtml = '<div class="text-xs font-bold text-blue-700 animate-pulse">✦ Gemini Assistant is formulating a conversational follow-up...</div>';
       renderPlacementPrep();
       bindEvaluationStudyGuideLinks();
       if (iv.autoSpeak && iv.lastEvaluation) {
-        speakInterviewText(`Score ${iv.lastEvaluation.score} out of 100. ${iv.lastEvaluation.strengths} Suggested study guide: ${activeQ.studyTopic}.`);
+        speakInterviewText(`${iv.lastEvaluation.humanConversationalReply} Your score on this question is ${iv.lastEvaluation.score} out of 100.`);
       }
 
       try {
-        const prompt = `Act as a Mechanical Engineering Interview Panelist for ${iv.company}.\nQuestion: ${activeQ.q}\nCandidate Answer: ${iv.answerText || '(Provide model walkthrough)'}\nGive concise feedback, governing formulas, and 1 follow-up viva question.`;
+        const prompt = `Act as a warm, human-like Gemini Live Interviewer for ${iv.company} (${iv.roundMode.toUpperCase()} Round).\nQuestion: ${activeQ.q}\nCandidate (Girish)'s Answer: ${iv.answerText || '(Candidate asked for walkthrough)'}\nRespond conversationally like a supportive human mentor: 1) Acknowledge what Girish said well, 2) Show the exact formula/step-by-step calculation or STAR method improvement, and 3) Ask one natural follow-up question.`;
         const res = await invokeAITutor({ question: prompt, topic: activeQ.studyTopic, mode: 'viva' });
         iv.coachFeedbackHtml = `
-          <div class="p-4 rounded-2xl bg-slate-900 text-white space-y-2">
+          <div class="p-4 rounded-2xl bg-slate-900 text-white space-y-2 border border-blue-700">
             <div class="flex items-center justify-between border-b border-slate-700 pb-2">
-              <span class="font-extrabold text-xs text-amber-400">🎙️ Combined AI Panelist Viva Feedback (${escapeHtml(res.provider)})</span>
-              <button type="button" id="iv-speak-coach-btn" class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold">🔊 Speak Feedback</button>
+              <span class="font-extrabold text-xs text-amber-400">✦ Gemini Live Conversational Response (${escapeHtml(res.provider)})</span>
+              <button type="button" id="iv-speak-coach-btn" class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold">🔊 Speak Gemini Reply</button>
             </div>
             <div class="text-xs leading-relaxed text-slate-200">${formatEngineeringMarkdown(res.answer)}</div>
           </div>
@@ -7024,10 +7813,10 @@ function formatReadableSyllabus(rawText) {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase text-slate-500">Combined Voice + Text Score</span>
+            <span class="text-xs font-bold uppercase text-slate-500">Gemini Viva Score</span>
             <span class="px-2.5 py-0.5 rounded-full border text-xs font-extrabold ${badgeColor}">${ev.score} / 100</span>
           </div>
-          <div class="text-xs text-slate-700 leading-relaxed"><b>Strengths:</b> ${escapeHtml(ev.strengths)}</div>
+          <div class="text-xs text-slate-700 leading-relaxed"><b>Gemini Feedback:</b> ${escapeHtml(ev.strengths)}</div>
           <div class="text-xs text-amber-900 bg-amber-50 p-2.5 rounded-xl border border-amber-200 leading-relaxed"><b>To Improve:</b> ${escapeHtml(ev.gaps)}</div>
           <div class="formula-box text-xs mt-2"><b>Key Formula:</b> ${escapeHtml(qItem.formula)}</div>
         </div>
