@@ -5254,8 +5254,11 @@ function formatReadableSyllabus(rawText) {
   function renderProctorCameraWidgetHtml(compact = false, toggleId = 'live-camera-toggle-btn') {
     const ps = state.proctorState;
     const camOn = isCameraProctoringEnabled();
+    const boxStyle = compact
+      ? 'width: 260px; min-width: 240px; max-width: 100%; flex: 0 0 auto;'
+      : 'width: 100%;';
     return `
-      <div class="bg-slate-900 text-white rounded-2xl border border-slate-700 p-3 shadow-lg ${compact ? 'w-full sm:w-68' : 'w-full'} space-y-2">
+      <div style="${boxStyle}" class="bg-slate-950 text-white rounded-2xl border border-slate-700 p-3 shadow-lg space-y-2 shrink-0">
         <div class="flex items-center justify-between gap-2">
           <span class="text-[10px] font-extrabold uppercase tracking-wider text-blue-300 flex items-center gap-1">
             <span class="w-2 h-2 rounded-full ${camOn ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}"></span>
@@ -5271,11 +5274,11 @@ function formatReadableSyllabus(rawText) {
           </div>
         </div>
         ${camOn ? `
-          <div class="relative w-full h-28 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
-            <video id="proctor-webcam-video" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
+          <div style="height: 128px;" class="relative w-full bg-slate-900 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+            <video id="proctor-webcam-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
             <div id="proctor-face-reticle" class="absolute inset-2.5 rounded-xl border-2 border-emerald-400/80 pointer-events-none"></div>
-            <div class="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] bg-slate-950/80 px-2 py-0.5 rounded">
-              <span id="proctor-live-status" class="font-extrabold text-emerald-300">${escapeHtml(ps.statusText)}</span>
+            <div class="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] bg-slate-950/85 px-2 py-0.5 rounded">
+              <span id="proctor-live-status" class="font-extrabold text-emerald-300 truncate">${escapeHtml(ps.statusText)}</span>
             </div>
           </div>
           <div class="space-y-1">
@@ -5288,7 +5291,7 @@ function formatReadableSyllabus(rawText) {
             </div>
           </div>
         ` : `
-          <div class="w-full h-24 bg-slate-950 rounded-xl border border-slate-800 flex flex-col items-center justify-center text-center p-2">
+          <div style="height: 96px;" class="w-full bg-slate-900 rounded-xl border border-slate-800 flex flex-col items-center justify-center text-center p-2">
             <span class="text-xs font-bold text-slate-400">📷 Camera Detector is OFF</span>
             <span class="text-[10px] text-slate-500 mt-0.5">Click "Cam OFF" above anytime to enable AI face &amp; motion proctoring.</span>
           </div>
@@ -5333,6 +5336,112 @@ function formatReadableSyllabus(rawText) {
       `====================================================================`
     ];
     return lines.join('\n');
+  }
+
+  // ==========================================================================
+  // CONTACT US & BUG REPORT BOX (TO: Sgirish960@gmail.com · FROM: GIRISH S)
+  // ==========================================================================
+  function renderContactAndBugReportBoxHtml(prefixId = 'contact-bug') {
+    return `
+      <section class="bg-slate-900 text-white rounded-2xl p-5 sm:p-6 border-2 border-indigo-500/80 shadow-xl space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div>
+            <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+              🛠️ Contact Us &amp; Bug Report Desk · Platform Creator: Girish S
+            </span>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-0.5">
+              Report a Bug, Wrong Answer, or Feature Request to Girish (<code class="text-blue-300">Sgirish960@gmail.com</code>)
+            </h2>
+          </div>
+          <span class="px-3 py-1 rounded-full bg-indigo-950 text-indigo-200 border border-indigo-700 font-mono text-xs font-bold shrink-0">
+            To: Sgirish960@gmail.com
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1" for="${prefixId}-type">Report Category</label>
+            <select id="${prefixId}-type" class="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs font-bold">
+              <option value="Bug / UI Issue">🐞 Bug / UI Layout Issue</option>
+              <option value="Wrong Question / Formula Correction">📐 Question / Answer / Formula Correction</option>
+              <option value="AI Interview / Camera Proctor Feedback">🎙️ AI Interview / Camera Proctor Feedback</option>
+              <option value="Feature Request / General Contact">💡 Feature Request / Contact Girish</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1" for="${prefixId}-sender">Your Name / USN (Optional)</label>
+            <input id="${prefixId}-sender" type="text" placeholder="Student Name / USN" class="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1" for="${prefixId}-to-email">Developer Support Email (Girish)</label>
+            <input id="${prefixId}-to-email" type="email" value="Sgirish960@gmail.com" readonly class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-indigo-500 text-amber-300 font-mono text-xs font-bold">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1" for="${prefixId}-desc">Describe the Bug, Question ID, or Feedback:</label>
+          <textarea id="${prefixId}-desc" rows="3" placeholder="Describe what happened, which module/question had an issue, or what feature you would like added..." class="w-full p-3.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs sm:text-sm focus:outline-none focus:border-amber-400"></textarea>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap gap-2.5">
+            <button type="button" id="${prefixId}-send-gmail-btn" class="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow-lg transition">
+              🐞 Send Bug Report via Gmail (Sgirish960@gmail.com) ↗
+            </button>
+            <button type="button" id="${prefixId}-send-mailto-btn" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition">
+              ✉️ Open Mail App
+            </button>
+          </div>
+          <span class="text-[11px] text-slate-400">Maintained by <b class="text-white">Girish S</b> · Mechanical Engineering, SJCE Mysuru</span>
+        </div>
+        <div id="${prefixId}-status" class="text-xs text-emerald-300 font-bold hidden"></div>
+      </section>
+    `;
+  }
+
+  function bindContactAndBugReportEvents(prefixId = 'contact-bug') {
+    const getPayload = () => {
+      const cat = document.getElementById(`${prefixId}-type`)?.value || 'Bug Report';
+      const sender = document.getElementById(`${prefixId}-sender`)?.value?.trim() || 'MechPrep User';
+      const desc = document.getElementById(`${prefixId}-desc`)?.value?.trim() || '(No description entered)';
+      const toEmail = 'Sgirish960@gmail.com';
+      const subject = `[MechPrep v5 ${cat}] Bug / Feedback Report from ${sender}`;
+      const body = [
+        `Hello Girish (Sgirish960@gmail.com),`,
+        ``,
+        `Category: ${cat}`,
+        `Reported By: ${sender}`,
+        `Active Module: ${state.activeModule}`,
+        `Timestamp: ${new Date().toLocaleString()}`,
+        `----------------------------------------`,
+        `Bug / Issue Details:`,
+        desc,
+        `----------------------------------------`
+      ].join('\n');
+      return { toEmail, subject, body };
+    };
+
+    document.getElementById(`${prefixId}-send-gmail-btn`)?.addEventListener('click', () => {
+      const { toEmail, subject, body } = getPayload();
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.open(gmailUrl, '_blank', 'noopener,noreferrer');
+      const st = document.getElementById(`${prefixId}-status`);
+      if (st) {
+        st.classList.remove('hidden');
+        st.textContent = `✓ Opened Gmail bug report addressed to Girish (${toEmail})!`;
+      }
+      showToast(`Prepared bug report to ${toEmail}!`, 'success');
+    });
+
+    document.getElementById(`${prefixId}-send-mailto-btn`)?.addEventListener('click', () => {
+      const { toEmail, subject, body } = getPayload();
+      window.location.href = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      const st = document.getElementById(`${prefixId}-status`);
+      if (st) {
+        st.classList.remove('hidden');
+        st.textContent = `✓ Opened mail client addressed to ${toEmail}.`;
+      }
+    });
   }
 
   function renderEmailReportDropBoxHtml(prefixId, currentEmail, titleText) {
@@ -5444,8 +5553,8 @@ function formatReadableSyllabus(rawText) {
           ${renderProctorWarningBannerHtml()}
 
           <!-- Full-Screen Active Exam Header + Live Face & Motion Detector HUD -->
-          <div class="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xl border border-blue-800/60">
-            <div class="space-y-1.5 min-w-0 flex-1">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem;" class="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-xl border border-blue-800/60">
+            <div style="flex: 1 1 360px; min-width: 280px;" class="space-y-2">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-600 text-white">
                   ${m.jobProcessMode ? '🏢 Version 5 Job Process · Round 1 Screening Test' : '🛡️ Version 5 Proctored Mock Exam'}
@@ -5626,7 +5735,7 @@ function formatReadableSyllabus(rawText) {
                   🔊 Gemini Voice Summary
                 </button>
                 <button type="button" id="proceed-stage2-interview-btn" class="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold shadow-lg">
-                  🎙️ Proceed to Stage 2: Gemini AI Interview →
+                  🗣️ Proceed to Round 2: Group Discussion (GD) & Technical Interview →
                 </button>
                 <button type="button" id="new-mock-btn" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold">
                   ↻ New Mock Exam
@@ -5735,6 +5844,8 @@ function formatReadableSyllabus(rawText) {
         renderMockTests();
       });
       document.getElementById('proceed-stage2-interview-btn')?.addEventListener('click', () => {
+        state.interviewState.roundMode = 'gd';
+        state.interviewState.track = 'Group Discussion (GD) Round Simulator & Campus GD Topics';
         switchModule('placement');
         generateSelfGeneratingInterviewSet(5);
         enterInterviewFullscreen(false);
@@ -7434,39 +7545,81 @@ function formatReadableSyllabus(rawText) {
   function evaluateInterviewResponse(qItem, userAnswer) {
     const clean = String(userAnswer || '').trim();
     const lower = clean.toLowerCase();
-    const matchedKeywords = (qItem.keywords || []).filter(kw => lower.includes(kw.toLowerCase()));
+    const expectedKws = qItem.keywords || [];
+    const matchedKeywords = expectedKws.filter(kw => lower.includes(kw.toLowerCase()));
+    const missingKeywords = expectedKws.filter(kw => !lower.includes(kw.toLowerCase()));
     const wordCount = clean ? clean.split(/\s+/).length : 0;
 
-    const kwRatio = matchedKeywords.length / Math.max(1, (qItem.keywords || []).length);
+    const kwRatio = matchedKeywords.length / Math.max(1, expectedKws.length);
     const lengthBonus = Math.min(25, Math.round(wordCount / 2.0));
     const rawScore = clean.length < 6 ? 0 : Math.min(98, Math.round(kwRatio * 75 + lengthBonus));
 
-    const missingKeywords = (qItem.keywords || []).filter(kw => !lower.includes(kw.toLowerCase()));
+    // Explicit Rating Tier: GREAT vs GOOD vs WORST
+    let ratingTier = 'WORST';
+    let ratingBadgeClass = 'bg-rose-600 text-white border-rose-400';
+    if (rawScore >= 75) {
+      ratingTier = 'GREAT';
+      ratingBadgeClass = 'bg-emerald-600 text-white border-emerald-400';
+    } else if (rawScore >= 42) {
+      ratingTier = 'GOOD';
+      ratingBadgeClass = 'bg-amber-500 text-slate-950 border-amber-300';
+    }
+
+    // Diagnose specific flaws / what is wrong in the user's response
+    const flawsList = [];
+    if (!clean || wordCount < 5) {
+      flawsList.push('Your answer is almost empty or far too brief—an interview panel expects at least 25–45 words explaining the concept, formula, and real application.');
+    } else if (wordCount < 18) {
+      flawsList.push(`Your response is too short (${wordCount} words). Expand with the governing equation, SI units, or a concrete STAR example.`);
+    }
+
+    if (missingKeywords.length > 0) {
+      flawsList.push(`Missing critical technical keywords/values expected by the panel: ${missingKeywords.slice(0, 6).join(', ')}.`);
+    }
+
+    if (qItem.formula && !/[=×/+-]|sigma|tau|pi|ratio|star|sort|force|torque|stress/i.test(clean)) {
+      flawsList.push(`You did not state or reference the governing formula/framework (${qItem.formula}). Always state the formula first before substituting values.`);
+    }
+
+    if (/5s/i.test(qItem.q) && !lower.includes('shine')) {
+      flawsList.push('Flaw in 5S: You missed "Shine (Seiso)"—the complete 5S sequence is Sort, Set in Order, Shine, Standardize, Sustain.');
+    }
+    if (/agv|two-wheel|2wd/i.test(qItem.q) && !/35|34\.6|divide|half|two/i.test(lower)) {
+      flawsList.push('Flaw in AGV Torque: Remember to divide total axle torque (69.25 N·m) by 2 for a Two-Wheel-Drive (2WD) system to get 35 N·m per wheel.');
+    }
+    if (/bore|63/i.test(qItem.q) && !/0\.6|1870|3117/i.test(lower)) {
+      flawsList.push('Unit Conversion Flaw: Convert 6 bar to 0.6 N/mm² before multiplying by area A = π(63)²/4 = 3,117.25 mm² to get 1,870 N.');
+    }
+
+    if (flawsList.length === 0) {
+      flawsList.push('No major flaws detected! Your response is well-structured, accurate, and covers the key technical and analytical points.');
+    }
 
     const recommendedGuides = state.guides.filter(g => {
       const hay = `${g.name || ''} ${g.title || ''} ${g.topic || ''} ${g.idea || ''}`.toLowerCase();
       return hay.includes((qItem.studyGuideQuery || 'Mohr').toLowerCase()) || hay.includes((qItem.studyTopic || 'Design').split(' ')[0].toLowerCase());
     }).slice(0, 3);
 
-    // Human-like conversational Gemini response
-    const humanGreeting = rawScore >= 75
-      ? `Great job on that explanation, Girish! You hit the core concepts (${matchedKeywords.slice(0, 4).join(', ')}) right on the mark.`
-      : rawScore >= 45
-        ? `Good effort! You're on the right track with ${matchedKeywords.length ? matchedKeywords.slice(0, 3).join(', ') : 'the concept'}, and adding the exact formula and units will make your answer 10 out of 10.`
-        : `Let's walk through this together! The key trick here is applying ${qItem.formula || 'the governing equation'} with consistent SI units.`;
+    // Replace "Hi Girish" with "Hi!" as requested
+    const humanGreeting = ratingTier === 'GREAT'
+      ? `Hi! That is a GREAT response (${rawScore}/100)! You covered ${matchedKeywords.slice(0, 4).join(', ')} accurately.`
+      : ratingTier === 'GOOD'
+        ? `Hi! That is a GOOD response (${rawScore}/100). You got the core idea (${matchedKeywords.slice(0, 3).join(', ') || 'foundation'}), but here is what was missing: ${flawsList[0]}`
+        : `Hi! Right now this response is rated WORST / Needs Work (${rawScore}/100). The main flaw is: ${flawsList[0]}`;
 
     return {
       score: rawScore,
+      ratingTier,
+      ratingBadgeClass,
       wordCount,
       matchedKeywords,
       missingKeywords,
+      flawsList,
       humanConversationalReply: humanGreeting,
       strengths: matchedKeywords.length
-        ? `${humanGreeting} Matched keywords: ${matchedKeywords.join(', ')}.`
-        : `${humanGreeting}`,
-      gaps: missingKeywords.length
-        ? `Include these key terms & numbers next time: ${missingKeywords.slice(0, 6).join(', ')}.`
-        : 'Complete coverage of all expected panel points!',
+        ? `Rating: ${ratingTier} (${rawScore}/100). Correct points covered: ${matchedKeywords.join(', ')}.`
+        : `Rating: ${ratingTier} (${rawScore}/100). No key technical terms from the model rubric were detected yet.`,
+      gaps: flawsList.join(' '),
       recommendedGuides,
       qItem
     };
@@ -7527,7 +7680,7 @@ function formatReadableSyllabus(rawText) {
     if (startMicImmediately) {
       setTimeout(() => toggleVoiceMicrophoneInput(), 250);
     } else if (iv.autoSpeak && activeQ) {
-      setTimeout(() => speakInterviewText(`Hi Girish, welcome to your ${iv.roundMode === 'hr' ? 'HR Interview' : iv.roundMode === 'gd' ? 'Group Discussion' : 'Technical Interview'} session. Here is Question ${iv.qIndex + 1}. ${activeQ.q}`), 300);
+      setTimeout(() => speakInterviewText(`Hi! Welcome to your ${iv.roundMode === 'hr' ? 'HR Interview' : iv.roundMode === 'gd' ? 'Group Discussion' : 'Technical Interview'} session. Here is Question ${iv.qIndex + 1}. ${activeQ.q}`), 300);
     }
   }
 
@@ -7762,9 +7915,9 @@ function formatReadableSyllabus(rawText) {
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex flex-wrap gap-1.5">
                   ${[
-                    ['technical', '⚙️ Self-Gen Technical Interview'],
-                    ['hr', '🤝 Self-Gen HR Interview (40+ Qs)'],
-                    ['gd', '🗣️ Self-Gen Group Discussion (GD)']
+                    ['gd', '2️⃣ Round 2: Self-Gen Group Discussion (GD)'],
+                    ['technical', '3️⃣ Round 3: Self-Gen Technical Interview'],
+                    ['hr', '4️⃣ Round 4: Self-Gen HR Interview (40+ Qs)']
                   ].map(([mKey, mLbl]) => `
                     <button type="button" data-iv-round-mode="${mKey}" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${iv.roundMode === mKey ? 'bg-blue-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
                       ${mLbl}
@@ -7954,49 +8107,49 @@ function formatReadableSyllabus(rawText) {
               </label>
             </div>
 
-            <!-- 4-Stage Campus Recruitment Cards (Mock Test, Technical Interview, Separate HR Round, Group Discussion GD) -->
+            <!-- 4-Stage Campus Recruitment Cards (Round 1: Mock Test -> Round 2: Group Discussion GD -> Round 3: Technical Interview -> Round 4: HR Round) -->
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700 flex flex-col justify-between gap-2">
                 <div>
                   <span class="text-[10px] font-extrabold uppercase text-blue-400">Round 1 · Written Test</span>
                   <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Proctored Mock Test + Timing Report</h3>
-                  <p class="text-[11px] text-slate-300 mt-0.5">Includes your Technical Test Review (AGV, Pneumatics, Bearings, 5S) with per-question timer.</p>
+                  <p class="text-[11px] text-slate-300 mt-0.5">Basic/Inter/Adv levels + Core vs Aptitude slider + per-question timing report.</p>
                 </div>
                 <button type="button" id="job-stage1-btn" class="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs">
-                  1️⃣ Start Proctored Mock Test →
+                  1️⃣ Round 1: Proctored Mock Test →
+                </button>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-emerald-950/90 border-2 border-emerald-400 flex flex-col justify-between gap-2">
+                <div>
+                  <span class="text-[10px] font-extrabold uppercase text-emerald-300">Round 2 · Group Discussion (GD)</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Self-Generating Campus GD Round</h3>
+                  <p class="text-[11px] text-slate-200 mt-0.5">EV vs Hydrogen, AI in Manufacturing &amp; Make in India GD topics with GREAT/GOOD/WORST flaw check.</p>
+                </div>
+                <button type="button" id="launch-gd-iv-btn" class="w-full py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow">
+                  2️⃣ Round 2: Start GD Simulator →
                 </button>
               </div>
 
               <div class="p-3.5 rounded-xl bg-blue-950/90 border-2 border-amber-400 flex flex-col justify-between gap-2">
                 <div>
-                  <span class="text-[10px] font-extrabold uppercase text-amber-300">Round 2 · Technical Viva</span>
+                  <span class="text-[10px] font-extrabold uppercase text-amber-300">Round 3 · Technical Viva</span>
                   <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Gemini Live Technical Interview</h3>
-                  <p class="text-[11px] text-slate-200 mt-0.5">30+ Fresher Mechanical Qs + AGV/Pneumatic Numericals with Human Face Motion &amp; Voice.</p>
+                  <p class="text-[11px] text-slate-200 mt-0.5">Self-generating Mechanical &amp; AGV/Pneumatic Numericals with Human Face Motion &amp; Voice.</p>
                 </div>
                 <button type="button" id="launch-tech-iv-btn" class="w-full py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs shadow">
-                  2️⃣ Start Technical Interview →
+                  3️⃣ Round 3: Technical Interview →
                 </button>
               </div>
 
               <div class="p-3.5 rounded-xl bg-indigo-950/90 border border-indigo-500 flex flex-col justify-between gap-2">
                 <div>
-                  <span class="text-[10px] font-extrabold uppercase text-indigo-300">Round 3 · Separate HR Round</span>
-                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">40 Most Asked HR Questions Viva</h3>
-                  <p class="text-[11px] text-slate-200 mt-0.5">Practice Tell Me About Yourself, Strengths, 5-Yr Plan, Conflict &amp; Salary with Gemini Voice.</p>
+                  <span class="text-[10px] font-extrabold uppercase text-indigo-300">Round 4 · Separate HR Round</span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Self-Generating 40+ HR Questions</h3>
+                  <p class="text-[11px] text-slate-200 mt-0.5">Tell Me About Yourself, Strengths, 5-Yr Plan, Conflict &amp; Salary with GREAT/GOOD/WORST rating.</p>
                 </div>
                 <button type="button" id="launch-hr-iv-btn" class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow">
-                  3️⃣ Start Separate HR Interview →
-                </button>
-              </div>
-
-              <div class="p-3.5 rounded-xl bg-emerald-950/90 border border-emerald-500 flex flex-col justify-between gap-2">
-                <div>
-                  <span class="text-[10px] font-extrabold uppercase text-emerald-300">Round 4 · Group Discussion</span>
-                  <h3 class="text-xs sm:text-sm font-extrabold text-white mt-0.5">Campus GD Simulator &amp; Pitch</h3>
-                  <p class="text-[11px] text-slate-200 mt-0.5">Practice EV vs Hydrogen, AI in Manufacturing &amp; Industry 4.0 GD topics with live scoring.</p>
-                </div>
-                <button type="button" id="launch-gd-iv-btn" class="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow">
-                  4️⃣ Start GD Simulator →
+                  4️⃣ Round 4: Separate HR Interview →
                 </button>
               </div>
             </div>
@@ -8249,8 +8402,13 @@ function formatReadableSyllabus(rawText) {
             `).join('')}
           </div>
         </section>
+
+        <!-- 7. CONTACT US & BUG REPORT BOX TO GIRISH (Sgirish960@gmail.com) -->
+        ${renderContactAndBugReportBoxHtml('placement-bug')}
       </div>
     `;
+
+    bindContactAndBugReportEvents('placement-bug');
 
     document.getElementById('hub-camera-toggle')?.addEventListener('change', (e) => {
       iv.proctoringEnabled = Boolean(e.target.checked);
@@ -8371,7 +8529,7 @@ function formatReadableSyllabus(rawText) {
     document.getElementById('iv-persona-select')?.addEventListener('change', (e) => {
       iv.voicePersona = e.target.value;
       renderPlacementPrep();
-      speakInterviewText(`Hi Girish! I'm now speaking in ${iv.voicePersona === 'gemini-live' ? 'Gemini Live conversational' : iv.voicePersona} mode.`);
+      speakInterviewText(`Hi! I'm now speaking in ${iv.voicePersona === 'gemini-live' ? 'Gemini Live conversational' : iv.voicePersona} mode.`);
     });
     document.getElementById('iv-room-diff-select')?.addEventListener('change', (e) => {
       iv.difficulty = e.target.value;
@@ -8456,7 +8614,7 @@ function formatReadableSyllabus(rawText) {
       }
 
       try {
-        const prompt = `Act as a warm, human-like Gemini Live Interviewer for ${iv.company} (${iv.roundMode.toUpperCase()} Round).\nQuestion: ${activeQ.q}\nCandidate (Girish)'s Answer: ${iv.answerText || '(Candidate asked for walkthrough)'}\nRespond conversationally like a supportive human mentor: 1) Acknowledge what Girish said well, 2) Show the exact formula/step-by-step calculation or STAR method improvement, and 3) Ask one natural follow-up question.`;
+        const prompt = `Act as a warm, human-like Gemini Live Interviewer for ${iv.company} (${iv.roundMode.toUpperCase()} Round).\nQuestion: ${activeQ.q}\nCandidate's Answer: ${iv.answerText || '(Candidate asked for walkthrough)'}\nRespond conversationally like a supportive human mentor: 1) State clearly whether the response is GREAT, GOOD, or WORST and point out exact flaws or what was wrong, 2) Show the exact formula/step-by-step calculation or STAR method improvement, and 3) Ask one natural follow-up question.`;
         const res = await invokeAITutor({ question: prompt, topic: activeQ.studyTopic, mode: 'viva' });
         iv.coachFeedbackHtml = `
           <div class="p-4 rounded-2xl bg-slate-900 text-white space-y-2 border border-blue-700">
@@ -8480,23 +8638,52 @@ function formatReadableSyllabus(rawText) {
   function renderInterviewEvaluationHtml(ev, coachFeedbackHtml = '') {
     if (!ev || !ev.qItem) return '';
     const qItem = ev.qItem;
-    const badgeColor = ev.score >= 75 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : ev.score >= 45 ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-rose-100 text-rose-800 border-rose-300';
+    const tier = ev.ratingTier || (ev.score >= 75 ? 'GREAT' : ev.score >= 42 ? 'GOOD' : 'WORST');
+    const tierBannerBg = tier === 'GREAT'
+      ? 'bg-emerald-950 border-emerald-500 text-emerald-100'
+      : tier === 'GOOD'
+        ? 'bg-amber-950 border-amber-400 text-amber-100'
+        : 'bg-rose-950 border-rose-500 text-rose-100';
+    const tierPillBg = tier === 'GREAT'
+      ? 'bg-emerald-500 text-slate-950'
+      : tier === 'GOOD'
+        ? 'bg-amber-400 text-slate-950'
+        : 'bg-rose-600 text-white';
 
     return `
+      <!-- Explicit Verdict Banner: GREAT / GOOD / WORST + Spoken Summary -->
+      <div class="p-4 rounded-2xl border-2 ${tierBannerBg} flex flex-wrap items-center justify-between gap-3 shadow-lg">
+        <div class="flex items-center gap-3">
+          <span class="px-3.5 py-1.5 rounded-xl font-black text-xs sm:text-sm uppercase tracking-wider shadow ${tierPillBg}">
+            ${tier === 'GREAT' ? '🌟 GREAT RESPONSE' : tier === 'GOOD' ? '👍 GOOD RESPONSE' : '⚠️ WORST / NEEDS WORK'} (${ev.score}/100)
+          </span>
+          <span class="text-xs sm:text-sm font-bold">${escapeHtml(ev.humanConversationalReply)}</span>
+        </div>
+        <button type="button" id="iv-speak-flaws-btn" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-600 shrink-0">
+          🔊 Hear What Was Wrong / Flaws
+        </button>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
+        <!-- Flaws & What Was Wrong in Your Response -->
+        <div class="p-4 rounded-2xl border-2 border-rose-200 bg-rose-50/50 space-y-2.5">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase text-slate-500">Gemini Viva Score</span>
-            <span class="px-2.5 py-0.5 rounded-full border text-xs font-extrabold ${badgeColor}">${ev.score} / 100</span>
+            <span class="text-xs font-extrabold uppercase text-rose-900">🔍 Flaws &amp; What Was Wrong / Missing</span>
+            <span class="text-[11px] font-bold text-slate-600">${ev.wordCount || 0} words</span>
           </div>
-          <div class="text-xs text-slate-700 leading-relaxed"><b>Gemini Feedback:</b> ${escapeHtml(ev.strengths)}</div>
-          <div class="text-xs text-amber-900 bg-amber-50 p-2.5 rounded-xl border border-amber-200 leading-relaxed"><b>To Improve:</b> ${escapeHtml(ev.gaps)}</div>
-          <div class="formula-box text-xs mt-2"><b>Key Formula:</b> ${escapeHtml(qItem.formula)}</div>
+          <ul class="list-disc pl-4 space-y-1.5 text-xs text-rose-950 font-medium leading-relaxed">
+            ${(ev.flawsList || [ev.gaps]).map(flaw => `<li>${escapeHtml(flaw)}</li>`).join('')}
+          </ul>
+          <div class="text-xs text-emerald-900 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 leading-relaxed">
+            <b>What You Got Right:</b> ${escapeHtml(ev.strengths)}
+          </div>
+          <div class="formula-box text-xs mt-1"><b>Required Formula / Structure:</b> ${escapeHtml(qItem.formula)}</div>
         </div>
 
+        <!-- Model 10/10 Panel Answer -->
         <div class="lg:col-span-2 p-4 rounded-2xl border border-emerald-200 bg-emerald-50/40 space-y-2.5">
           <div class="flex items-center justify-between">
-            <span class="font-extrabold text-xs uppercase tracking-wider text-emerald-900">✓ Model 10/10 Panel Answer (Voice + Text)</span>
+            <span class="font-extrabold text-xs uppercase tracking-wider text-emerald-900">✓ Model 10/10 Panel Answer (How to Make It GREAT)</span>
             <button type="button" id="iv-speak-model-ans-btn" class="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold">
               🔊 Listen to Model Answer
             </button>
@@ -8544,6 +8731,12 @@ function formatReadableSyllabus(rawText) {
   }
 
   function bindEvaluationStudyGuideLinks() {
+    document.getElementById('iv-speak-flaws-btn')?.addEventListener('click', () => {
+      const ev = state.interviewState.lastEvaluation;
+      if (ev) {
+        speakInterviewText(`Your response rating is ${ev.ratingTier}, with a score of ${ev.score} out of 100. Flaws identified: ${(ev.flawsList || []).join('. ')}`);
+      }
+    });
     document.getElementById('iv-speak-model-ans-btn')?.addEventListener('click', () => {
       const iv = state.interviewState;
       const trackQuestions = getActiveInterviewQuestions();
@@ -8910,8 +9103,11 @@ function formatReadableSyllabus(rawText) {
             </p>
           </div>
         </div>
+
+        ${renderContactAndBugReportBoxHtml('settings-bug')}
       </div>
     `;
+    bindContactAndBugReportEvents('settings-bug');
 
     document.getElementById('save-ai-settings-btn')?.addEventListener('click', () => {
       cfg.provider = document.getElementById('set-provider')?.value || 'auto';
